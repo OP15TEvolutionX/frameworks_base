@@ -175,6 +175,20 @@ constructor(
 
     val isKeyguardExpanded: StateFlow<Boolean> = keyguardExpansion.isExpanded
 
+    @Volatile private var lastOutsideCollapseTime = 0L
+
+    /** Called by the overlay on ACTION_OUTSIDE. Only acts if the panel was open. */
+    fun collapseFromOutsideTouch(eventTime: Long) {
+        if (statusBarExpansion.isExpanded.value) {
+            lastOutsideCollapseTime = eventTime
+            statusBarExpansion.collapse()
+        }
+    }
+
+    /** True if the panel was just closed by the same touch that produced this tap. */
+    fun tapFollowsOutsideCollapse(downTime: Long): Boolean =
+        lastOutsideCollapseTime >= downTime - 100
+
     fun cycleNext() = interactor.cycleNext()
 
     fun cyclePrev() = interactor.cyclePrev()

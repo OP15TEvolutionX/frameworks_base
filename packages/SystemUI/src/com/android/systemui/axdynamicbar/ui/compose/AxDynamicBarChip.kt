@@ -148,18 +148,20 @@ fun AxDynamicBarChip(
                             } else if (!decided) {
 
                                 change.consume()
-                                val wasExpanded = viewModel.statusBarExpansion.isExpanded.value
-                                val current = state?.event
-                                if (current is IslandEvent.AospChip) {
-                                    val expandable = currentExpandable
-                                    if (expandable == null ||
-                                        !viewModel.handleAospChipTap(current, expandable)) {
+                                if (!viewModel.tapFollowsOutsideCollapse(down.uptimeMillis)) {
+                                    val wasExpanded = viewModel.statusBarExpansion.isExpanded.value
+                                    val current = state?.event
+                                    if (current is IslandEvent.AospChip) {
+                                        val expandable = currentExpandable
+                                        if (expandable == null ||
+                                            !viewModel.handleAospChipTap(current, expandable)) {
+                                            viewModel.statusBarExpansion.toggle()
+                                            if (!wasExpanded) toggleCount++
+                                        }
+                                    } else {
                                         viewModel.statusBarExpansion.toggle()
                                         if (!wasExpanded) toggleCount++
                                     }
-                                } else {
-                                    viewModel.statusBarExpansion.toggle()
-                                    if (!wasExpanded) toggleCount++
                                 }
                             }
                             
