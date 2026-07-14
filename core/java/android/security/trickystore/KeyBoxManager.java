@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
 public class KeyBoxManager {
     private static final String TAG = "KeyBoxManager";
 
-    private final Map<String, KeyBox> mKeyboxes = new ConcurrentHashMap<>();
+    private volatile Map<String, KeyBox> mKeyboxes = new ConcurrentHashMap<>();
     
     private static final Pattern PEM_HEADER = Pattern.compile("-----BEGIN ([^-]+)-----");
     private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
@@ -73,10 +73,20 @@ public class KeyBoxManager {
         return mKeyboxes.get(algorithm);
     }
 
-    public void parseKeybox(String xmlContent) {
-        mKeyboxes.clear();
+    /**
+     * Parses [xmlContent] and, if it is acceptable, replaces the loaded keyboxes.
+     * A document that fails the completeness check leaves the previously loaded
+     * keyboxes untouched, so one bad refresh can't take attestation down.
+     *
+     * @return false if the document was rejected as incomplete, true otherwise
+     */
+    public boolean parseKeybox(String xmlContent) {
+        // Parse into a private map and publish it at the end, so a concurrent
+        // attestation never sees a half-filled or empty keybox mid-refresh.
+        Map<String, KeyBox> next = new ConcurrentHashMap<>();
         if (xmlContent == null || xmlContent.isEmpty()) {
-            return;
+            mKeyboxes = next;
+            return true;
         }
 
         try {
@@ -96,6 +106,15 @@ public class KeyBoxManager {
             boolean inPrivateKey = false;
             boolean inCertificateChain = false;
             boolean inCertificate = false;
+            boolean inNumberOfKeyboxes = false;
+            StringBuilder numberOfKeyboxesBuilder = null;
+            Integer declaredKeyboxCount = null;
+            // NumberOfKeyboxes counts <Keybox> elements, each of which normally holds
+            // both an ECDSA and an RSA <Key>, so count boxes and not keys.
+            int parsedKeyboxCount = 0;
+            boolean sawKeyboxTag = false;
+            boolean boxHasKey = false;
+            int parsedKeyCount = 0;
 
             int eventType = parser.getEventType();
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -103,7 +122,10 @@ public class KeyBoxManager {
 
                 switch (eventType) {
                     case XmlPullParser.START_TAG:
-                        if ("Key".equals(tagName)) {
+                        if ("Keybox".equals(tagName)) {
+                            sawKeyboxTag = true;
+                            boxHasKey = false;
+                        } else if ("Key".equals(tagName)) {
                             inKey = true;
                             currentKeyIndex++;
                             currentAlgorithm = parser.getAttributeValue(null, "algorithm");
@@ -119,6 +141,9 @@ public class KeyBoxManager {
                         } else if ("Certificate".equals(tagName) && inCertificateChain) {
                             inCertificate = true;
                             certBuilder = new StringBuilder();
+                        } else if ("NumberOfKeyboxes".equals(tagName) && !inKey) {
+                            inNumberOfKeyboxes = true;
+                            numberOfKeyboxesBuilder = new StringBuilder();
                         }
                         break;
 
@@ -129,6 +154,8 @@ public class KeyBoxManager {
                                 privateKeyBuilder.append(text);
                             } else if (inCertificate && certBuilder != null) {
                                 certBuilder.append(text);
+                            } else if (inNumberOfKeyboxes && numberOfKeyboxesBuilder != null) {
+                                numberOfKeyboxesBuilder.append(text);
                             }
                         }
                         break;
@@ -154,11 +181,26 @@ public class KeyBoxManager {
                             inCertificate = false;
                         } else if ("CertificateChain".equals(tagName)) {
                             inCertificateChain = false;
+                        } else if ("NumberOfKeyboxes".equals(tagName)) {
+                            if (numberOfKeyboxesBuilder != null) {
+                                try {
+                                    declaredKeyboxCount =
+                                            Integer.parseInt(numberOfKeyboxesBuilder.toString().trim());
+                                } catch (NumberFormatException ignored) {
+                                }
+                                numberOfKeyboxesBuilder = null;
+                            }
+                            inNumberOfKeyboxes = false;
                         } else if ("Key".equals(tagName)) {
                             inKey = false;
                             if (currentAlgorithm != null && privateKeyPem != null && !certificatePems.isEmpty()) {
-                                processKeybox(currentAlgorithm, privateKeyPem, certificatePems);
+                                processKeybox(next, currentAlgorithm, privateKeyPem, certificatePems);
+                                parsedKeyCount++;
+                                boxHasKey = true;
                             }
+                        } else if ("Keybox".equals(tagName)) {
+                            if (boxHasKey) parsedKeyboxCount++;
+                            boxHasKey = false;
                         }
                         break;
                 }
@@ -166,13 +208,37 @@ public class KeyBoxManager {
                 eventType = parser.next();
             }
 
-            Log.i(TAG, "Parsed " + mKeyboxes.size() + " keyboxes");
+            // Guards against a truncated or partially-fetched keybox.xml (network hiccup
+            // mid auto-refresh, or a bad KEYBOX_SOURCE_USER paste) silently taking effect
+            // with fewer keys than the document itself declares it has.
+            // A document without <Keybox> wrappers holds a single implicit box.
+            if (!sawKeyboxTag && parsedKeyCount > 0) parsedKeyboxCount = 1;
+            // Generators disagree on what NumberOfKeyboxes counts: the <Keybox>
+            // wrappers, or the <Key> elements inside them. Accept either, and reject
+            // only when the document matches neither, which is what a truncated
+            // download looks like.
+            if (declaredKeyboxCount != null
+                    && declaredKeyboxCount != parsedKeyboxCount
+                    && declaredKeyboxCount != parsedKeyCount) {
+                Log.e(TAG, "Keybox XML declares " + declaredKeyboxCount + " keybox(es) but only "
+                        + parsedKeyboxCount + " box(es) / " + parsedKeyCount
+                        + " key(s) parsed successfully — rejecting as incomplete, keeping"
+                        + " the current keyboxes");
+                return false;
+            }
+
+            mKeyboxes = next;
+            Log.i(TAG, "Parsed " + next.size() + " keyboxes");
+            return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to parse keybox XML", e);
+            mKeyboxes = next;
+            return true;
         }
     }
 
-    private void processKeybox(String algorithm, String privateKeyPem, List<String> certificatePems) {
+    private void processKeybox(Map<String, KeyBox> target, String algorithm, String privateKeyPem,
+            List<String> certificatePems) {
         try {
             String normalizedAlgorithm;
             switch (algorithm.toLowerCase()) {
@@ -200,7 +266,7 @@ public class KeyBoxManager {
             if (!certificates.isEmpty()) {
                 PublicKey publicKey = ((X509Certificate) certificates.get(0)).getPublicKey();
                 KeyPair keyPair = new KeyPair(publicKey, privateKey);
-                mKeyboxes.put(normalizedAlgorithm, new KeyBox(keyPair, certificates));
+                target.put(normalizedAlgorithm, new KeyBox(keyPair, certificates));
                 Log.i(TAG, "Added keybox for algorithm: " + normalizedAlgorithm);
             }
         } catch (Exception e) {

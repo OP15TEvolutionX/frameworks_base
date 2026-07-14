@@ -65,14 +65,22 @@ public final class PlayIntegritySpoofService {
     private volatile int mVerboseLogs = 0;
     private volatile boolean mSpoofBuild = true;
     private volatile boolean mSpoofProps = true;
-    private volatile boolean mSpoofProvider = true;
+    // Off unless the config asks for it. Upstream defaults this to on, but it makes
+    // DroidGuard's getCertificateChain() throw, which would bypass the keybox
+    // attestation done in AndroidKeyStoreSpi for a device that has one.
+    private volatile boolean mSpoofProvider = false;
     private volatile boolean mSpoofSignature = false;
     // Replaces the old all-or-nothing "spoofVendingBuild" boolean. This now matches
     // upstream PlayIntegrityFork semantics: "0"/empty = disabled (default), "1"/"true" =
     // spoof the configured FINGERPRINT field only, or any other value = use that literal
     // string as a custom FINGERPRINT to serve to Play Store instead of the DroidGuard one.
     private volatile String mSpoofVendingFinger = "0";
-    private volatile boolean mSpoofVendingSdk = false;
+    // 0 = disabled, 1 = spoof Play Store's SDK_INT to 32, N > 1 = spoof it to N.
+    // Never raises SDK_INT above the real one.
+    private volatile int mSpoofVendingSdk = 0;
+    // Set once spoofProvider() has armed the DroidGuard certificate-chain block in
+    // this process. Static so AndroidKeyStoreSpi can check it without an instance.
+    private static volatile boolean sBlockCertificateChain = false;
     private volatile boolean mDebug = false;
 
     private final Map<String, String> mBuildFields = new ConcurrentHashMap<>();
@@ -123,6 +131,8 @@ public final class PlayIntegritySpoofService {
                 parseProp(content);
             }
 
+            deriveFieldsFromFingerprint();
+
             mConfigLoaded = true;
             Log.i(TAG, "PIF config loaded, fields=" + mBuildFields.size()
                 + ", props=" + mSystemProps.size());
@@ -139,6 +149,29 @@ public final class PlayIntegritySpoofService {
         } catch (Throwable e) {
             Log.e(TAG, "Failed to load PIF config", e);
         }
+    }
+
+    /**
+     * Fills ID / INCREMENTAL / TYPE / TAGS / RELEASE from FINGERPRINT when the config
+     * doesn't set them, like PIF's migrate.sh does. Without this DroidGuard sees the
+     * spoofed FINGERPRINT next to the ROM's own Build.ID, INCREMENTAL, TYPE, TAGS and
+     * RELEASE, which is easy to cross-check.
+     * Format: brand/product/device:release/id/incremental:type/tags
+     */
+    private void deriveFieldsFromFingerprint() {
+        String fp = mBuildFields.get("FINGERPRINT");
+        if (fp == null) return;
+        int colon = fp.indexOf(':');
+        if (colon < 0) return;
+        String[] rest = fp.substring(colon + 1).split("/");
+        if (rest.length < 4) return;
+        String[] incrementalAndType = rest[2].split(":");
+        if (incrementalAndType.length != 2) return;
+        mBuildFields.putIfAbsent("RELEASE", rest[0]);
+        mBuildFields.putIfAbsent("ID", rest[1]);
+        mBuildFields.putIfAbsent("INCREMENTAL", incrementalAndType[0]);
+        mBuildFields.putIfAbsent("TYPE", incrementalAndType[1]);
+        mBuildFields.putIfAbsent("TAGS", rest[3]);
     }
 
     private void parseProp(String content) {
@@ -228,7 +261,7 @@ public final class PlayIntegritySpoofService {
                 }
                 break;
             case "spoofVendingSdk":
-                mSpoofVendingSdk = "1".equals(value) || "true".equalsIgnoreCase(value);
+                mSpoofVendingSdk = parseVendingSdk(value);
                 break;
             case "DEBUG":
                 mDebug = "1".equals(value) || "true".equalsIgnoreCase(value);
@@ -240,6 +273,15 @@ public final class PlayIntegritySpoofService {
                     mBuildFields.put(key, value);
                 }
                 break;
+        }
+    }
+
+    private static int parseVendingSdk(String value) {
+        if ("true".equalsIgnoreCase(value)) return 1;
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -270,6 +312,12 @@ public final class PlayIntegritySpoofService {
         if (!isDroidGuard && !isVending) return;
 
         if (isVending) {
+            // Like upstream, spoofing the SDK level replaces the FINGERPRINT spoof
+            // for Play Store rather than adding to it.
+            if (mSpoofVendingSdk > 0) {
+                spoofSdkInt();
+                return;
+            }
             String vendingFingerprint = resolveVendingFingerprint();
             if (vendingFingerprint == null) {
                 if (mVerboseLogs > 0) Log.d(TAG, "Vending FINGERPRINT spoofing disabled");
@@ -286,13 +334,6 @@ public final class PlayIntegritySpoofService {
 
         for (Map.Entry<String, String> entry : mBuildFields.entrySet()) {
             spoofField(entry.getKey(), entry.getValue(), "DG");
-        }
-
-        // spoofVendingSdk when enabled applies an additional SDK_INT override
-        // specifically for DroidGuard to match legacy attestation paths.
-        // It has no effect on Vending.
-        if (mSpoofVendingSdk) {
-            spoofSdkInt();
         }
     }
 
@@ -410,15 +451,11 @@ public final class PlayIntegritySpoofService {
     }
 
     private void spoofSdkInt() {
-        // Only called for DroidGuard. Reads SDK_INT from config so it stays
-        // consistent with the spoofed fingerprint. Falls back to 32 if unset.
-        String configSdk = mBuildFields.get("SDK_INT");
-        int targetSdk;
-        try {
-            targetSdk = (configSdk != null) ? Integer.parseInt(configSdk) : 32;
-        } catch (NumberFormatException e) {
-            targetSdk = 32;
-        }
+        // Only called for Play Store, driven by spoofVendingSdk. The value is not
+        // taken from the config's SDK_INT field: that one belongs to DroidGuard's
+        // build fields.
+        int requestedSdk = mSpoofVendingSdk == 1 ? 32 : mSpoofVendingSdk;
+        int targetSdk = Math.min(Build.VERSION.SDK_INT, requestedSdk);
 
         Field field;
         try {
@@ -529,6 +566,33 @@ public final class PlayIntegritySpoofService {
         return mSpoofProvider && mConfigLoaded;
     }
 
+    /**
+     * Arms the DroidGuard certificate-chain block for this process. Only takes
+     * effect in DroidGuard itself: Play Store and every other process keep their
+     * normal AndroidKeyStore behaviour.
+     */
+    public void spoofProvider(String processName) {
+        if (!isSpoofProviderEnabled() || !isDroidGuard(processName)) return;
+        sBlockCertificateChain = true;
+        Log.i(TAG, "Certificate chain block enabled for DroidGuard");
+    }
+
+    /**
+     * Whether the AndroidKeyStore certificate-chain request being made right now
+     * should fail, so DroidGuard falls back to an attestation-free verdict. True
+     * only in a DroidGuard process armed by spoofProvider(), and only when
+     * DroidGuard is on the calling stack.
+     */
+    public static boolean shouldBlockCertificateChain() {
+        if (!sBlockCertificateChain) return false;
+        for (StackTraceElement e : Thread.currentThread().getStackTrace()) {
+            if (e.getClassName().toLowerCase(java.util.Locale.ROOT).contains("droidguard")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public int getVerboseLogs() {
         return mVerboseLogs;
     }
@@ -547,6 +611,17 @@ public final class PlayIntegritySpoofService {
 
     public boolean isConfigLoaded() {
         return mConfigLoaded;
+    }
+
+    /**
+     * Whether DroidGuard-facing Build field spoofing (FINGERPRINT, BRAND,
+     * DEVICE, PRODUCT, MANUFACTURER, MODEL, ...) is currently enabled for
+     * this process, independent of whether a config has actually loaded.
+     * Callers that also need config presence should check
+     * {@link #isConfigLoaded()} as well.
+     */
+    public boolean isSpoofBuildEnabled() {
+        return mSpoofBuild && mConfigLoaded;
     }
 
     public byte[] getRomSignatureBytes() {
