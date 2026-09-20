@@ -506,18 +506,18 @@ internal constructor(
 
     private fun playScreenshotSound() {
         var playSound = false
-        var playHaptic = false
         when (audioManager.ringerMode) {
             AudioManager.RINGER_MODE_SILENT -> {
                 // do nothing
             }
             AudioManager.RINGER_MODE_VIBRATE -> {
-                playHaptic = true
+                vibrator?.takeIf { it.hasVibrator() }?.vibrate(
+                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+                )
             }
             AudioManager.RINGER_MODE_NORMAL -> {
                 // in this case we want to play sound even if not forced on
                 playSound = true
-                playHaptic = true
             }
         }
         if (playSound && Settings.System.getIntForUser(
@@ -528,11 +528,6 @@ internal constructor(
             ) == 1
         ) {
             screenshotSoundController.playScreenshotSoundAsync()
-        }
-        if (playHaptic) {
-            vibrator?.takeIf { it.hasVibrator() }?.vibrate(
-                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
-            )
         }
     }
 

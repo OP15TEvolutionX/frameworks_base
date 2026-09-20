@@ -333,7 +333,7 @@ import com.android.server.wm.AxSandboxService;
 import com.android.server.wm.GameSpaceService;
 import com.android.server.wm.WindowManagerGlobalLock;
 import com.android.server.wm.WindowManagerService;
-
+import com.oplus.server.OplusAccessControlManagerService;
 import dalvik.system.VMDebug;
 import dalvik.system.VMRuntime;
 
@@ -1743,6 +1743,19 @@ public final class SystemServer implements Dumpable {
                     && com.android.npumanager.Flags.npumanagerEnabled()) {
                 t.traceBegin("StartNpuManagerService");
                 mSystemServiceManager.startService(NPU_MANAGER_SERVICE_CLASS);
+                t.traceEnd();
+            }
+
+            t.traceBegin("StartOplusAccessControlManagerService");
+            try {
+                OplusAccessControlManagerService oplusAccessControl =
+                        new OplusAccessControlManagerService(context);
+                ServiceManager.addService("oplus_accesscontrol", oplusAccessControl);
+                oplusAccessControl.onSystemReady();
+                Slog.i(TAG, "Oplus Access Control service started");
+            } catch (Throwable e) {
+                Slog.e(TAG, "Failed to start Oplus Access Control service; continuing boot", e);
+            } finally {
                 t.traceEnd();
             }
 

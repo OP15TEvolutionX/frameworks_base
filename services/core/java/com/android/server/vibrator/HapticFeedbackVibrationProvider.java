@@ -251,12 +251,12 @@ public final class HapticFeedbackVibrationProvider {
             case HapticFeedbackConstants.EDGE_RELEASE:
             case HapticFeedbackConstants.CALENDAR_DATE:
             case HapticFeedbackConstants.CONFIRM:
-            case HapticFeedbackConstants.BIOMETRIC_CONFIRM:
             case HapticFeedbackConstants.GESTURE_START:
             case HapticFeedbackConstants.SCROLL_ITEM_FOCUS:
             case HapticFeedbackConstants.SCROLL_LIMIT:
                 return VibrationEffect.get(VibrationEffect.EFFECT_CLICK);
 
+            case HapticFeedbackConstants.BIOMETRIC_CONFIRM:
             case HapticFeedbackConstants.LONG_PRESS:
             case HapticFeedbackConstants.LONG_PRESS_POWER_BUTTON:
             case HapticFeedbackConstants.DRAG_START:
