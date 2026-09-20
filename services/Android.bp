@@ -378,6 +378,7 @@ java_library {
         "android.hidl.manager-V1.0-java",
         "framework-tethering.stubs.module_lib",
         "keepanno-annotations",
+        "oplus-fwk",
         "service-art.stubs.system_server",
         "service-crashrecovery.stubs.system_server",
         "service-permission.stubs.system_server",
