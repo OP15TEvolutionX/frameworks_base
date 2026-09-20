@@ -345,6 +345,8 @@ public final class PowerManagerService extends SystemService
     private final Context mContext;
     private final ServiceThread mHandlerThread;
     private final Handler mHandler;
+    @Nullable
+    private OplusAodLightSensor mOplusAodLightSensor;
     private final AmbientDisplayConfiguration mAmbientDisplayConfiguration;
     @Nullable
     private final BatterySaverStateMachine mBatterySaverStateMachine;
@@ -1513,6 +1515,7 @@ public final class PowerManagerService extends SystemService
             mAttentionDetector.systemReady(mContext);
 
             SensorManager sensorManager = new SystemSensorManager(mContext, mHandler.getLooper());
+            mOplusAodLightSensor = new OplusAodLightSensor(sensorManager, mHandler);
 
             // The notifier runs on the system server's main looper so as not to interfere
             // with the animations and other critical functions of the power manager.
@@ -2735,6 +2738,20 @@ public final class PowerManagerService extends SystemService
             // Under lock, invalidate before set ensures caches won't return stale values.
             mInjector.invalidateIsInteractiveCaches();
             mWakefulnessRaw = newWakefulness;
+
+            // Put the panel in its dark AOD mode before DisplayPowerController starts
+            // the Doze/ON transition.  The first lux_aod event arrives later and would
+            // otherwise leave the panel in the bright mode for a few seconds.
+            if (newWakefulness == WAKEFULNESS_DOZING) {
+                if (mOplusAodLightSensor != null) {
+                    mOplusAodLightSensor.setEnabled(true);
+                }
+                Slog.d(TAG, "Preparing dark AOD panel mode before Doze display transition");
+                OplusAodPanelFeature.prepareDarkAodMode();
+            } else if (mOplusAodLightSensor != null) {
+                mOplusAodLightSensor.setEnabled(false);
+            }
+
             mWakefulnessChanging = true;
             mDirty |= DIRTY_WAKEFULNESS;
 
@@ -5224,6 +5241,16 @@ public final class PowerManagerService extends SystemService
                 mDozeScreenStateOverrideReasonFromDreamManager = reason;
                 mDozeScreenBrightnessOverrideFromDreamManager = screenBrightness;
                 mUseNormalBrightnessForDoze = useNormalBrightnessForDoze;
+                if (mOplusAodLightSensor != null) {
+                    mOplusAodLightSensor.setEnabled(
+                            mWakefulnessRaw == WAKEFULNESS_DOZING
+                                    && screenState != Display.STATE_UNKNOWN);
+                }
+                if (Display.isDozeState(screenState)) {
+                    // The panel driver applies Feature 7 when the display actually enters
+                    // DOZE. Re-send the latest sensor-selected mode at that boundary.
+                    OplusAodPanelFeature.reapplyAodMode();
+                }
                 mDirty |= DIRTY_SETTINGS;
                 updatePowerStateLocked();
             }

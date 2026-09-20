@@ -245,6 +245,9 @@
         <!-- OPENED -->
     </string-array>
 
+    <!-- Doze: use the configured default AOD brightness during the screen-off transition. -->
+    <bool name="config_doze_use_default_brightness_on_entry">false</bool>
+
     <!-- Override value to use for proximity sensor.  -->
     <string name="proximity_sensor_type" translatable="false"></string>
 
