@@ -455,7 +455,6 @@ constructor(
                 if (Build.IS_DEBUGGABLE) {
                     Log.d(TAG, "adding view=$view")
                 }
-
                 if (useMtkGhbmDimming) {
                     hbmLayoutParams?.updateDimensions(animation)
                     hbmLayoutParamsFull?.updateDimensions(animation)
@@ -484,6 +483,9 @@ constructor(
                 } else {
                     windowManager.addView(view, coreLayoutParams.updateDimensions(animation))
                 }
+                pendingTouchUpCallback?.let {
+                    (view as? com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay)?.onTouchUpCallback = it
+                }
             }
         if (powerInteractor.detailedWakefulness.value.isAwake()) {
             // Device is awake, so we add the view immediately.
@@ -503,6 +505,37 @@ constructor(
             it.run()
         }
         addViewRunnable = null
+    }
+
+    val isWaitingForScreenTurnedOn: Boolean
+        get() = addViewRunnable != null
+
+    var isConsumingTouches: Boolean = false
+        private set
+
+    private var pendingTouchUpCallback: Runnable? = null
+
+    fun setTouchUpCallback(callback: Runnable?) {
+        pendingTouchUpCallback = callback
+        (getTouchOverlay() as? com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay)?.onTouchUpCallback = callback
+    }
+
+    fun setConsumeTouches(consume: Boolean) {
+        if (isConsumingTouches == consume) return
+        isConsumingTouches = consume
+        if (consume) {
+            coreLayoutParams.inputFeatures =
+                coreLayoutParams.inputFeatures and WindowManager.LayoutParams.INPUT_FEATURE_SPY.inv()
+        } else {
+            coreLayoutParams.inputFeatures =
+                coreLayoutParams.inputFeatures or WindowManager.LayoutParams.INPUT_FEATURE_SPY
+        }
+        (getTouchOverlay() as? com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay)?.isConsumingTouches = consume
+        getTouchOverlay()?.let {
+            if (addViewRunnable == null && it.isAttachedToWindow) {
+                windowManager.updateViewLayout(it, coreLayoutParams.updateDimensions(null))
+            }
+        }
     }
 
     fun updateOverlayParams(updatedOverlayParams: UdfpsOverlayParams) {
@@ -601,10 +634,16 @@ constructor(
                 else -> false
             }
 
-        // Use expanded overlay unless touchExploration enabled
+        // Use expanded overlay unless touchExploration enabled or consuming touches
+        val padding = (30 * context.resources.displayMetrics.density).toInt()
         var rotatedBounds =
-            if (accessibilityManager.isTouchExplorationEnabled && isEnrollment) {
-                Rect(overlayParams.sensorBounds)
+            if (isConsumingTouches || (accessibilityManager.isTouchExplorationEnabled && isEnrollment)) {
+                Rect(
+                    overlayParams.sensorBounds.left - padding,
+                    overlayParams.sensorBounds.top - padding,
+                    overlayParams.sensorBounds.right + padding,
+                    overlayParams.sensorBounds.bottom + padding,
+                )
             } else {
                 Rect(0, 0, overlayParams.naturalDisplayWidth, overlayParams.naturalDisplayHeight)
             }

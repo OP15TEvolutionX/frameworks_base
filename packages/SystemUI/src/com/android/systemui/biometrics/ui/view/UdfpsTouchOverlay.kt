@@ -20,6 +20,8 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.Surface
+import android.view.MotionEvent
+import androidx.core.view.isInvisible
 import android.widget.FrameLayout
 import com.android.systemui.biometrics.UdfpsDisplayModeProvider
 import com.android.systemui.biometrics.UdfpsSurfaceView
@@ -40,6 +42,64 @@ class UdfpsTouchOverlay(context: Context, attrs: AttributeSet?) : FrameLayout(co
     /** True after the call to [configureDisplay] and before the call to [unconfigureDisplay]. */
     var isDisplayConfigured: Boolean = false
         private set
+
+    /** True while a pointer is currently touching down on this overlay. */
+    var isTrackingTouch: Boolean = false
+        private set
+
+    var shouldBeInvisibleWhenTouchEnds: Boolean = false
+
+    var onTouchUpCallback: Runnable? = null
+
+    var isAodInterruptActive: Boolean = false
+        set(value) {
+            field = value
+            if (value) {
+                isInvisible = false
+                shouldBeInvisibleWhenTouchEnds = false
+            } else if (shouldBeInvisibleWhenTouchEnds && !isTrackingTouch && !isConsumingTouches) {
+                isInvisible = true
+                shouldBeInvisibleWhenTouchEnds = false
+            }
+        }
+
+    var isConsumingTouches: Boolean = false
+        set(value) {
+            field = value
+            if (value) {
+                isInvisible = false
+                shouldBeInvisibleWhenTouchEnds = false
+            } else if (shouldBeInvisibleWhenTouchEnds && !isTrackingTouch && !isAodInterruptActive) {
+                isInvisible = true
+                shouldBeInvisibleWhenTouchEnds = false
+            }
+        }
+
+    init {
+        isClickable = true
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> isTrackingTouch = true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                if (ev.pointerCount <= 1) {
+                    isTrackingTouch = false
+                    if (shouldBeInvisibleWhenTouchEnds && !isAodInterruptActive && !isConsumingTouches) {
+                        isInvisible = true
+                        shouldBeInvisibleWhenTouchEnds = false
+                    }
+                    onTouchUpCallback?.run()
+                }
+            }
+        }
+        super.dispatchTouchEvent(ev)
+        return true
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        return true
+    }
 
     override fun onFinishInflate() {
         ghbmView = findViewById(R.id.hbm_view)
