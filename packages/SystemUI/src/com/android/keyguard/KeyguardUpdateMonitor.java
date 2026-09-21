@@ -68,6 +68,10 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.UserInfo;
 import android.database.ContentObserver;
 import android.hardware.SensorPrivacyManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.hardware.biometrics.BiometricAuthenticator;
 import android.hardware.biometrics.BiometricFingerprintConstants;
 import android.hardware.biometrics.BiometricManager;
@@ -476,6 +480,83 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
 
     public boolean isPocketLockVisible(){
         return mPocketManager.isPocketLockVisible();
+    }
+
+    private boolean mIsProximityNear = false;
+    private boolean mProximityListenerRegistered = false;
+    private SensorManager mSensorManager;
+    private Sensor mProximitySensor;
+
+    private static final long PROXIMITY_DEBOUNCE_NEAR_MS = 500L;
+    private static final long PROXIMITY_DEBOUNCE_FAR_MS = 50L;
+
+    private final Runnable mProximityNearRunnable = this::handleProximityNearDebounced;
+    private final Runnable mProximityFarRunnable = this::handleProximityFarDebounced;
+
+    private void handleProximityNearDebounced() {
+        if (!mIsProximityNear) {
+            mLogger.d("KeyguardUpdateMonitor proximity near debounced (500ms): disabling fingerprint");
+            mIsProximityNear = true;
+            updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
+        }
+    }
+
+    private void handleProximityFarDebounced() {
+        if (mIsProximityNear) {
+            mLogger.d("KeyguardUpdateMonitor proximity far debounced (200ms): enabling fingerprint");
+            mIsProximityNear = false;
+            updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
+        }
+    }
+
+    private final SensorEventListener mProximitySensorEventListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            if (mProximitySensor == null) return;
+            boolean near = event.values[0] < mProximitySensor.getMaximumRange();
+            mLogger.d("KeyguardUpdateMonitor proximity raw onSensorChanged: near=" + near);
+            if (near) {
+                mHandler.removeCallbacks(mProximityFarRunnable);
+                if (!mIsProximityNear && !mHandler.hasCallbacks(mProximityNearRunnable)) {
+                    mHandler.postDelayed(mProximityNearRunnable, PROXIMITY_DEBOUNCE_NEAR_MS);
+                }
+            } else {
+                mHandler.removeCallbacks(mProximityNearRunnable);
+                if (mIsProximityNear && !mHandler.hasCallbacks(mProximityFarRunnable)) {
+                    mHandler.postDelayed(mProximityFarRunnable, PROXIMITY_DEBOUNCE_FAR_MS);
+                }
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    };
+
+    private void updateProximitySensorListener() {
+        if (mSensorManager == null) {
+            mSensorManager = mContext.getSystemService(SensorManager.class);
+            if (mSensorManager != null) {
+                mProximitySensor = mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY, true);
+            }
+        }
+        if (mProximitySensor == null) return;
+
+        boolean shouldListen = !mDeviceInteractive || mKeyguardShowing;
+        if (shouldListen && !mProximityListenerRegistered) {
+            mSensorManager.registerListener(mProximitySensorEventListener, mProximitySensor,
+                    SensorManager.SENSOR_DELAY_NORMAL, mHandler);
+            mProximityListenerRegistered = true;
+            mLogger.d("Registered proximity sensor listener for pocket detection");
+        } else if (!shouldListen && mProximityListenerRegistered) {
+            mSensorManager.unregisterListener(mProximitySensorEventListener);
+            mProximityListenerRegistered = false;
+            mHandler.removeCallbacks(mProximityNearRunnable);
+            mHandler.removeCallbacks(mProximityFarRunnable);
+            mLogger.d("Unregistered proximity sensor listener for pocket detection");
+            if (mIsProximityNear) {
+                mIsProximityNear = false;
+            }
+        }
     }
 
     private final IBiometricEnabledOnKeyguardCallback mBiometricEnabledCallback =
@@ -1895,6 +1976,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
 
                 @Override
                 public void onAuthenticationFailed() {
+                    if (mIsProximityNear) {
+                        mLogger.d("onAuthenticationFailed: dropped because proximity is near (pocket)");
+                        return;
+                    }
                     requestActiveUnlockDismissKeyguard(
                             ActiveUnlockConfig.ActiveUnlockRequestOrigin.BIOMETRIC_FAIL,
                             "fingerprintFailure");
@@ -1903,6 +1988,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
 
                 @Override
                 public void onAuthenticationSucceeded(AuthenticationResult result) {
+                    if (mIsProximityNear) {
+                        mLogger.d("onAuthenticationSucceeded: dropped because proximity is near (pocket)");
+                        return;
+                    }
                     Trace.beginSection("KeyguardUpdateMonitor#onAuthenticationSucceeded");
                     handleFingerprintAuthenticated(result.getUserId(), result.isStrongBiometric());
                     Trace.endSection();
@@ -1924,6 +2013,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
 
                 @Override
                 public void onAuthenticationAcquired(int acquireInfo) {
+                    if (mIsProximityNear) {
+                        mLogger.d("onAuthenticationAcquired: dropped because proximity is near (pocket)");
+                        return;
+                    }
                     Trace.beginSection("KeyguardUpdateMonitor#onAuthenticationAcquired");
                     mLogger.logFingerprintAcquired(acquireInfo);
                     handleFingerprintAcquired(acquireInfo);
@@ -2814,6 +2907,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     }
 
     private void updateFingerprintListeningState(int action) {
+        Assert.isMainThread();
+        updateProximitySensorListener();
         // If this message exists, we should not authenticate again until this message is
         // consumed by the handler
         if (mHandler.hasMessages(MSG_BIOMETRIC_AUTHENTICATION_CONTINUE)) {
@@ -3206,8 +3301,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
 
         boolean shouldListen = shouldListenKeyguardState && shouldListenUserState
                 && shouldListenBouncerState && shouldListenUdfpsState && !mBiometricPromptShowing
-                && shouldListenSecureLockDeviceState && shouldListenFpsState && !mIsDeviceInPocket
-                && (!mGoingToSleep || !isUdfps);
+                && shouldListenSecureLockDeviceState && shouldListenFpsState
+                && !mIsDeviceInPocket && !mIsProximityNear;
         logListenerModelData(
                 new KeyguardFingerprintListenModel(
                     System.currentTimeMillis(),
@@ -4388,6 +4483,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
             pw.println("    mIsDreaming=" + mIsDreaming);
             pw.println("    mFingerprintListenOnOccludingActivitiesFromPackage="
                     + mAllowFingerprintOnOccludingActivitiesFromPackage);
+            pw.println("        mIsProximityNear=" + mIsProximityNear);
+            pw.println("        mProximityListenerRegistered=" + mProximityListenerRegistered);
             if (isUdfpsSupported()) {
                 pw.println("        udfpsEnrolled=" + isUdfpsEnrolled());
                 pw.println("        shouldListenForUdfps=" + shouldListenForFingerprint(true));
