@@ -284,8 +284,8 @@ public final class HapticFeedbackVibrationProvider {
 
             case HapticFeedbackConstants.TOGGLE_ON:
                 return getVibration(
-                        VibrationEffect.Composition.PRIMITIVE_TICK,/* primitiveScale= */ 0.5f,
-                        VibrationEffect.EFFECT_TICK);
+                        VibrationEffect.Composition.PRIMITIVE_SPIN, /* primitiveScale= */ 0.8f,
+                        VibrationEffect.EFFECT_CLICK);
 
             case HapticFeedbackConstants.TOGGLE_OFF:
                 return getVibration(
@@ -332,13 +332,13 @@ public final class HapticFeedbackVibrationProvider {
 
         switch (effectId) {
             case HapticFeedbackConstants.KEYBOARD_RELEASE:
-                primitiveId = VibrationEffect.Composition.PRIMITIVE_TICK;
-                predefinedEffectId = VibrationEffect.EFFECT_TICK;
+                primitiveId = VibrationEffect.Composition.PRIMITIVE_LOW_TICK;
+                predefinedEffectId = VibrationEffect.EFFECT_TEXTURE_TICK;
                 predefinedEffectFallback = false;
                 break;
             case HapticFeedbackConstants.KEYBOARD_TAP:
             default:
-                primitiveId = VibrationEffect.Composition.PRIMITIVE_CLICK;
+                primitiveId = VibrationEffect.Composition.PRIMITIVE_TICK;
                 predefinedEffectId = VibrationEffect.EFFECT_CLICK;
                 predefinedEffectFallback = true;
         }
@@ -348,6 +348,11 @@ public final class HapticFeedbackVibrationProvider {
                         .addPrimitive(primitiveId, mKeyboardVibrationFixedAmplitude)
                         .compose();
             }
+        }
+        if (mVibratorInfo.isPrimitiveSupported(primitiveId)) {
+            return VibrationEffect.startComposition()
+                    .addPrimitive(primitiveId, 0.7f)
+                    .compose();
         }
         return VibrationEffect.get(predefinedEffectId, predefinedEffectFallback);
     }
