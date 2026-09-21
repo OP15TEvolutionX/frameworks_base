@@ -20,6 +20,8 @@ import android.security.Flags.secureLockDevice
 import com.android.compose.animation.scene.ObservableTransitionState
 import com.android.keyguard.logging.DeviceEntryIconLogger
 import com.android.systemui.bouncer.domain.interactor.AlternateBouncerInteractor
+import com.android.systemui.keyguard.domain.interactor.KeyguardTransitionInteractor
+import com.android.systemui.keyguard.shared.model.KeyguardState
 import com.android.systemui.keyguard.ui.viewmodel.DeviceEntryIconViewModel
 import com.android.systemui.scene.domain.interactor.SceneInteractor
 import com.android.systemui.scene.shared.flag.SceneContainerFlag
@@ -50,6 +52,7 @@ constructor(
     secureLockDeviceInteractor: Lazy<SecureLockDeviceInteractor>,
     systemUIDialogManager: SystemUIDialogManager,
     sceneInteractor: Lazy<SceneInteractor>,
+    keyguardTransitionInteractor: KeyguardTransitionInteractor,
     logger: DeviceEntryIconLogger,
 ) : UdfpsTouchOverlayViewModel {
     private val deviceEntryViewAlphaIsMostlyVisible: Flow<Boolean> =
@@ -90,25 +93,40 @@ constructor(
                 .distinctUntilChanged()
         }
 
+    private val isDozingOrAodOrTransitioningToDozing: Flow<Boolean> =
+        combine(
+            keyguardTransitionInteractor.currentKeyguardState,
+            keyguardTransitionInteractor.startedKeyguardTransitionStep,
+            deviceEntryIconViewModel.transitioningToDozing,
+        ) { currentState, startedStep, transitioningToDozing ->
+            transitioningToDozing ||
+                currentState == KeyguardState.DOZING ||
+                currentState == KeyguardState.AOD ||
+                currentState == KeyguardState.OFF ||
+                startedStep.from == KeyguardState.DOZING ||
+                startedStep.from == KeyguardState.AOD ||
+                startedStep.from == KeyguardState.OFF
+        }.distinctUntilChanged()
+
     override val shouldHandleTouches: Flow<Boolean> =
         combine(
                 deviceEntryViewAlphaIsMostlyVisible,
                 alternateBouncerInteractor.isVisible,
                 systemUIDialogManager.hideAffordancesRequest,
-                deviceEntryIconViewModel.transitioningToDozing,
+                isDozingOrAodOrTransitioningToDozing,
                 secureLockDeviceInteractor.get().shouldListenForBiometricAuth,
             ) {
                 canTouchDeviceEntryViewAlpha,
                 alternateBouncerVisible,
                 hideAffordancesRequest,
-                toDozing,
+                isDozingOrAodOrToDozing,
                 shouldListenForBiometricAuthDuringSecureLockDevice ->
                 val handleTouchesForSecureLockDeviceBiometricAuth =
                     (secureLockDevice() && shouldListenForBiometricAuthDuringSecureLockDevice)
                 val shouldHandleTouches =
                     (canTouchDeviceEntryViewAlpha && !hideAffordancesRequest) ||
                         alternateBouncerVisible ||
-                        toDozing ||
+                        isDozingOrAodOrToDozing ||
                         handleTouchesForSecureLockDeviceBiometricAuth
                 logger.logDeviceEntryUdfpsTouchOverlayShouldHandleTouches(
                     shouldHandleTouches,

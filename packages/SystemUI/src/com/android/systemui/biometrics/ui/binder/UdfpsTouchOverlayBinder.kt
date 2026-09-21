@@ -54,7 +54,16 @@ object UdfpsTouchOverlayBinder {
                                     "[$view]: update isVisible=$shouldHandleTouches",
                                 )
                             }
-                            view.isInvisible = !shouldHandleTouches
+                            if (shouldHandleTouches || view.isAodInterruptActive || view.isConsumingTouches) {
+                                view.shouldBeInvisibleWhenTouchEnds = false
+                                view.isInvisible = false
+                            } else {
+                                if (view.isTrackingTouch) {
+                                    view.shouldBeInvisibleWhenTouchEnds = true
+                                } else {
+                                    view.isInvisible = true
+                                }
+                            }
                             udfpsOverlayInteractor?.setHandleTouches(shouldHandleTouches)
                         }
                     }

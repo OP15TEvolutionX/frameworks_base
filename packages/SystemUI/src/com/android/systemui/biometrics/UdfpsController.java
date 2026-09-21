@@ -462,7 +462,11 @@ public class UdfpsController implements DozeReceiver, Dumpable {
                         return;
                     }
                     mAcquiredReceived = true;
-                    tryAodSendFingerUp();
+                    final View view = mOverlay.getTouchOverlay();
+                    unconfigureDisplay(view);
+                    if (!acquiredGood) {
+                        tryAodSendFingerUp();
+                    }
                 });
             }
         }
@@ -694,6 +698,14 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         mActivePointerId = processedTouch.getPointerOnSensorId();
         switch (processedTouch.getEvent()) {
             case DOWN:
+                if ((mStatusBarStateController.isDozing() || mKeyguardStateController.isShowing())
+                        && mFalsingManager.isProximityNear()) {
+                    Log.d(TAG, "onTouch DOWN rejected: device is dozing/keyguard and proximity is near (pocket)");
+                    return false;
+                }
+                if (mOverlay != null) {
+                    mOverlay.setConsumeTouches(true);
+                }
                 if (shouldTryToDismissKeyguard()) {
                     tryDismissingKeyguard();
                 }
@@ -745,8 +757,9 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         }
         logBiometricTouch(processedTouch.getEvent(), data);
 
-        // Always pilfer pointers that are within sensor area or when alternate bouncer is showing
-        if (mActivePointerId != MotionEvent.INVALID_POINTER_ID) {
+        // Always pilfer pointers that are within sensor area or when alternate bouncer is showing,
+        // or when waking up from an AOD interrupt (to prevent ongoing touch leaking to launcher)
+        if (mActivePointerId != MotionEvent.INVALID_POINTER_ID || mIsAodInterruptActive) {
             shouldPilfer = true;
         }
 
@@ -756,6 +769,7 @@ public class UdfpsController implements DozeReceiver, Dumpable {
             mInputManager.pilferPointers(
                     mOverlay.getTouchOverlay().getViewRootImpl().getInputToken());
             mPointerPilfered = true;
+            cancelAodSendFingerUpAction();
         }
 
         return mActivePointerId != MotionEvent.INVALID_POINTER_ID;
@@ -979,10 +993,12 @@ public class UdfpsController implements DozeReceiver, Dumpable {
 
     }
 
+    private Runnable mCancelPendingHideAction = null;
+
     private void redrawOverlay() {
         UdfpsControllerOverlay overlay = mOverlay;
         if (overlay != null) {
-            hideUdfpsOverlay();
+            hideUdfpsOverlayNow();
             showUdfpsOverlay(overlay);
         }
     }
@@ -990,12 +1006,19 @@ public class UdfpsController implements DozeReceiver, Dumpable {
     private void showUdfpsOverlay(@NonNull UdfpsControllerOverlay overlay) {
         mExecution.assertIsMainThread();
 
+        if (mCancelPendingHideAction != null) {
+            mCancelPendingHideAction.run();
+            mCancelPendingHideAction = null;
+            hideUdfpsOverlayNow();
+        }
+
         if (mOverlay != null) {
             Log.d(TAG, "showUdfpsOverlay | the overlay is already showing");
             return;
         }
 
         mOverlay = overlay;
+        mOverlay.setTouchUpCallback(this::handleTouchUpFromOverlay);
         final int requestReason = overlay.getRequestReason();
 
         if (mUdfpsAnimation != null) {
@@ -1032,8 +1055,70 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         }
     }
 
+    private void handleTouchUpFromOverlay() {
+        mExecution.assertIsMainThread();
+        if (mCancelPendingHideAction != null) {
+            Log.d(TAG, "handleTouchUpFromOverlay: touch lifted, rescheduling hide with 100ms cooldown");
+            mCancelPendingHideAction.run();
+            mCancelPendingHideAction = mFgExecutor.executeDelayed(() -> {
+                mCancelPendingHideAction = null;
+                if (mOverlay != null) {
+                    mOverlay.setConsumeTouches(false);
+                }
+                hideUdfpsOverlayNow();
+            }, 100L);
+        }
+    }
+
     private void hideUdfpsOverlay() {
         mExecution.assertIsMainThread();
+
+        if (mOverlay != null) {
+            // ALWAYS consume touches over the sensor area during overlay dismissal.
+            mOverlay.setConsumeTouches(true);
+
+            if (mCancelPendingHideAction != null) {
+                return;
+            }
+
+            Log.d(TAG, "hideUdfpsOverlay | deferring hide to absorb any finger touches");
+            mCancelPendingHideAction = mFgExecutor.executeDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (mOverlay == null) {
+                        mCancelPendingHideAction = null;
+                        return;
+                    }
+                    if (mOverlay.isWaitingForScreenTurnedOn()) {
+                        Log.d(TAG, "hideUdfpsOverlay | waiting for screen turned on before hiding");
+                        mCancelPendingHideAction = mFgExecutor.executeDelayed(this, 50L);
+                        return;
+                    }
+                    final View touchView = mOverlay.getTouchOverlay();
+                    final boolean isTrackingTouch = touchView instanceof com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay
+                            && ((com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay) touchView).isTrackingTouch();
+                    if (isTrackingTouch || mOnFingerDown) {
+                        Log.d(TAG, "hideUdfpsOverlay | finger still down when timeout expired, waiting for up");
+                        mCancelPendingHideAction = mFgExecutor.executeDelayed(this, 50L);
+                        return;
+                    }
+                    Log.d(TAG, "hideUdfpsOverlay | pending hide timeout expired, hiding now");
+                    mCancelPendingHideAction = null;
+                    hideUdfpsOverlayNow();
+                }
+            }, 300L);
+            return;
+        } else {
+            Log.v(TAG, "hideUdfpsOverlay | the overlay is already hidden");
+        }
+    }
+
+    private void hideUdfpsOverlayNow() {
+        mExecution.assertIsMainThread();
+        if (mCancelPendingHideAction != null) {
+            mCancelPendingHideAction.run();
+            mCancelPendingHideAction = null;
+        }
 
         if (mOverlay != null) {
             // Reset the controller back to its starting state.
@@ -1151,6 +1236,10 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         if (mIsAodInterruptActive) {
             return;
         }
+        if (mFalsingManager.isProximityNear()) {
+            Log.d(TAG, "onAodInterrupt rejected: proximity sensor is near (pocket)");
+            return;
+        }
 
         if (!mKeyguardUpdateMonitor.isFingerprintDetectionRunning()) {
             if (mFalsingManager.isFalseLongTap(FalsingManager.LOW_PENALTY)) {
@@ -1180,6 +1269,13 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         final long requestId = mOverlay != null ? mOverlay.getRequestId() : -1;
         mAodInterruptRunnable = () -> {
             mIsAodInterruptActive = true;
+            if (mOverlay != null) {
+                mOverlay.setConsumeTouches(true);
+                final View touchOverlay = mOverlay.getTouchOverlay();
+                if (touchOverlay instanceof com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay udfpsTouchOverlay) {
+                    udfpsTouchOverlay.setAodInterruptActive(true);
+                }
+            }
             // Since the sensor that triggers the AOD interrupt doesn't provide
             // ACTION_UP/ACTION_CANCEL,  we need to be careful about not letting the screen
             // accidentally remain in high brightness mode. As a mitigation, queue a call to
@@ -1255,7 +1351,6 @@ public class UdfpsController implements DozeReceiver, Dumpable {
      */
     @VisibleForTesting
     void cancelAodSendFingerUpAction() {
-        mIsAodInterruptActive = false;
         if (mCancelAodFingerUpAction != null) {
             mCancelAodFingerUpAction.run();
             mCancelAodFingerUpAction = null;
@@ -1445,6 +1540,8 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         }
         mOnFingerDown = false;
 
+        mIsAodInterruptActive = false;
+
         if (mUseMtkGhbmDimming && mOverlay != null) {
             View hbmView = mOverlay.getHbmView();
             if (hbmView != null) {
@@ -1457,6 +1554,35 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         }
         scheduleUnconfigureDisplay(view);
         cancelAodSendFingerUpAction();
+        if (view instanceof com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay udfpsTouchOverlay) {
+            udfpsTouchOverlay.setAodInterruptActive(false);
+        }
+        if (mCancelPendingHideAction != null) {
+            // Finger lifted, reschedule deferred hide with safety cooldown (100ms) to swallow
+            // any micro-bounces, delayed touch release, or launcher icon taps under the sensor.
+            Log.d(TAG, "onFingerUp: rescheduling deferred hideUdfpsOverlay with 100ms cooldown");
+            mCancelPendingHideAction.run();
+            mCancelPendingHideAction = mFgExecutor.executeDelayed(() -> {
+                mCancelPendingHideAction = null;
+                if (mOverlay != null) {
+                    mOverlay.setConsumeTouches(false);
+                }
+                hideUdfpsOverlayNow();
+            }, 100L);
+        } else if (!mKeyguardStateController.isShowing() && mOverlay != null) {
+            // Keyguard already dismissed, ensure a brief cooldown before removing overlay
+            mCancelPendingHideAction = mFgExecutor.executeDelayed(() -> {
+                mCancelPendingHideAction = null;
+                if (mOverlay != null) {
+                    mOverlay.setConsumeTouches(false);
+                }
+                hideUdfpsOverlayNow();
+            }, 100L);
+        } else {
+            if (mOverlay != null) {
+                mOverlay.setConsumeTouches(false);
+            }
+        }
     }
 
     public boolean isAnimationEnabled() {
