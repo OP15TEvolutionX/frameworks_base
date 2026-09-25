@@ -756,6 +756,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
     private static final long BUGREPORT_TV_GESTURE_TIMEOUT_MILLIS = 1000;
 
+    /** Component launched by the programmable side key when configured by the user. */
+    private static final String PROGRAMMABLE_KEY_ACTIVITY = "plus_key_activity";
+
     /* The number of steps between min and max brightness */
     private static final int BRIGHTNESS_STEPS = 10;
 
@@ -4570,6 +4573,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     }
 
     private boolean dispatchKeyToKeyHandlers(KeyEvent event) {
+        if (dispatchProgrammableKey(event)) {
+            return true;
+        }
+
         for (DeviceKeyHandler handler : mDeviceKeyHandlers) {
             try {
                 if (DEBUG_INPUT) {
@@ -4584,6 +4591,45 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             }
         }
         return false;
+    }
+
+    /**
+     * Launches the component selected for the programmable side key.
+     *
+     * An empty setting deliberately falls through to the normal ASSIST handling, preserving the
+     * stock behavior until a component is configured through the shell settings command.
+     */
+    private boolean dispatchProgrammableKey(KeyEvent event) {
+        if (event.getKeyCode() != KeyEvent.KEYCODE_ASSIST) {
+            return false;
+        }
+
+        final String flattenedComponent = Settings.System.getStringForUser(
+                mContext.getContentResolver(), PROGRAMMABLE_KEY_ACTIVITY, UserHandle.USER_CURRENT);
+        if (TextUtils.isEmpty(flattenedComponent)) {
+            return false;
+        }
+
+        final ComponentName component = ComponentName.unflattenFromString(flattenedComponent);
+        if (component == null) {
+            Slog.w(TAG, "Invalid programmable key component: " + flattenedComponent);
+            return false;
+        }
+
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            final Intent intent = new Intent()
+                    .setComponent(component)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            try {
+                mContext.startActivityAsUser(intent, UserHandle.CURRENT);
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Slog.w(TAG, "Unable to launch programmable key component " + component, e);
+            }
+        }
+
+        // Consume both DOWN and UP so the normal ASSIST action is not also dispatched.
+        return true;
     }
 
     // TODO(b/117479243): handle it in InputPolicy
