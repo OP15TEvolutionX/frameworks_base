@@ -16,6 +16,9 @@
 
 package com.android.systemui.qs.panels.ui.compose
 
+import android.content.res.Configuration
+import android.os.UserHandle
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement.spacedBy
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.integerResource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -55,6 +59,8 @@ import com.android.systemui.qs.panels.ui.viewmodel.TileViewModel
 import com.android.systemui.qs.panels.ui.viewmodel.toolbar.EditModeButtonViewModel
 import com.android.systemui.res.R
 import javax.inject.Inject
+
+private const val QS_ROWS_SETTING = "pixel_qs_rows"
 
 class PaginatedGridLayout
 @Inject
@@ -78,7 +84,20 @@ constructor(
                 delegateGridLayout.viewModelFactory.create()
             }
 
-        val rows = integerResource(R.integer.quick_settings_paginated_grid_num_rows)
+        val context = LocalContext.current
+        val defaultRows = integerResource(R.integer.quick_settings_paginated_grid_num_rows)
+        val rows =
+            if (context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                Settings.System.getIntForUser(
+                        context.contentResolver,
+                        QS_ROWS_SETTING,
+                        defaultRows,
+                        UserHandle.USER_CURRENT,
+                    )
+                    .coerceIn(1, 8)
+            } else {
+                defaultRows
+            }
         val pages =
             remember(tiles, rows, *delegateGridViewModel.pageKeys) {
                 delegateGridViewModel.splitIntoPages(tiles, rows)
