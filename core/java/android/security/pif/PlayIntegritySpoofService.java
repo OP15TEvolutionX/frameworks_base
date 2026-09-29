@@ -152,10 +152,10 @@ public final class PlayIntegritySpoofService {
     }
 
     /**
-     * Fills ID / INCREMENTAL / TYPE / TAGS / RELEASE from FINGERPRINT when the config
-     * doesn't set them, like PIF's migrate.sh does. Without this DroidGuard sees the
-     * spoofed FINGERPRINT next to the ROM's own Build.ID, INCREMENTAL, TYPE, TAGS and
-     * RELEASE, which is easy to cross-check.
+     * Fills BRAND / PRODUCT / DEVICE / ID / INCREMENTAL / TYPE / TAGS / RELEASE from
+     * FINGERPRINT when the config doesn't set them, like PIF's migrate.sh does.
+     * Without this DroidGuard sees the spoofed FINGERPRINT next to the ROM's own
+     * Build fields, which is easy to cross-check.
      * Format: brand/product/device:release/id/incremental:type/tags
      */
     private void deriveFieldsFromFingerprint() {
@@ -163,10 +163,18 @@ public final class PlayIntegritySpoofService {
         if (fp == null) return;
         int colon = fp.indexOf(':');
         if (colon < 0) return;
+        String[] head = fp.substring(0, colon).split("/");
         String[] rest = fp.substring(colon + 1).split("/");
         if (rest.length < 4) return;
         String[] incrementalAndType = rest[2].split(":");
         if (incrementalAndType.length != 2) return;
+        // PIF's default pif.prop only carries FINGERPRINT, MANUFACTURER, MODEL and
+        // SECURITY_PATCH, so BRAND/PRODUCT/DEVICE have to come from the fingerprint too.
+        if (head.length == 3) {
+            mBuildFields.putIfAbsent("BRAND", head[0]);
+            mBuildFields.putIfAbsent("PRODUCT", head[1]);
+            mBuildFields.putIfAbsent("DEVICE", head[2]);
+        }
         mBuildFields.putIfAbsent("RELEASE", rest[0]);
         mBuildFields.putIfAbsent("ID", rest[1]);
         mBuildFields.putIfAbsent("INCREMENTAL", incrementalAndType[0]);

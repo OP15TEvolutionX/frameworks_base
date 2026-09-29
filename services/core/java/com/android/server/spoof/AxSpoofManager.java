@@ -698,11 +698,17 @@ public class AxSpoofManager implements IAxSpoofManager {
             clearPifPropOverrides();
             return;
         }
+        // A config in PIF's default shape only has FINGERPRINT, so fall back to the
+        // brand/product/device inside it, as PlayIntegritySpoofService does.
+        final String[] head = fingerprintHead(fields.get("FINGERPRINT"));
         setStagedProp(PIF_PRODUCT_PROP_PREFIX + "manufacturer", fields.get("MANUFACTURER"));
-        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "brand", fields.get("BRAND"));
+        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "brand", firstNonEmpty(
+                fields.get("BRAND"), head != null ? head[0] : null));
         setStagedProp(PIF_PRODUCT_PROP_PREFIX + "model", fields.get("MODEL"));
-        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "device", fields.get("DEVICE"));
-        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "name", fields.get("PRODUCT"));
+        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "device", firstNonEmpty(
+                fields.get("DEVICE"), head != null ? head[2] : null));
+        setStagedProp(PIF_PRODUCT_PROP_PREFIX + "name", firstNonEmpty(
+                fields.get("PRODUCT"), head != null ? head[1] : null));
         setStagedProp(PIF_BUILD_ID_PROP, firstNonEmpty(
                 fields.get("*.build.id"), fields.get("ID"),
                 buildIdFromFingerprint(fields.get("FINGERPRINT"))));
@@ -741,6 +747,15 @@ public class AxSpoofManager implements IAxSpoofManager {
             if (v != null && !v.trim().isEmpty()) return v.trim();
         }
         return null;
+    }
+
+    /** {brand, product, device} from brand/product/device:release/id/incremental:type/tags. */
+    private static String[] fingerprintHead(String fingerprint) {
+        if (fingerprint == null) return null;
+        final int colon = fingerprint.indexOf(':');
+        if (colon < 0) return null;
+        final String[] head = fingerprint.substring(0, colon).split("/");
+        return head.length == 3 ? head : null;
     }
 
     /** Format: brand/product/device:release/id/incremental:type/tags */
