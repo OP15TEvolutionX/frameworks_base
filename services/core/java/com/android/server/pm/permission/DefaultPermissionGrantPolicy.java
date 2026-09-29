@@ -479,6 +479,29 @@ final class DefaultPermissionGrantPolicy {
             // Package info is already loaded, cache it
             pm.addPackageInfo(pkg.packageName, pkg);
 
+            if ("com.kieronquinn.app.smartspacer".equals(pkg.packageName)) {
+                // Keep user-facing permissions opt-in, including after a ROM upgrade.
+                final UserHandle user = UserHandle.of(userId);
+                if (pkg.requestedPermissions != null) {
+                    for (String permission : pkg.requestedPermissions) {
+                        if (!pm.isPermissionDangerous(permission)) continue;
+                        final int flags = pm.getPermissionFlags(permission, pkg, user);
+                        final int automaticFlags = PackageManager.FLAG_PERMISSION_SYSTEM_FIXED
+                                | PackageManager.FLAG_PERMISSION_GRANTED_BY_DEFAULT;
+                        if ((flags & automaticFlags) == 0) continue;
+                        pm.updatePermissionFlags(permission, pkg, automaticFlags, 0, user);
+                        final int userFlags = PackageManager.FLAG_PERMISSION_USER_SET
+                                | PackageManager.FLAG_PERMISSION_USER_FIXED
+                                | PackageManager.FLAG_PERMISSION_POLICY_FIXED;
+                        if ((flags & userFlags) == 0 && pm.isGranted(permission, pkg, user)) {
+                            pm.revokePermission(permission, pkg, user);
+                        }
+                    }
+                }
+                continue;
+            }
+
+
             if (!pm.isSysComponentOrPersistentPlatformSignedPrivApp(pkg)
                     || !doesPackageSupportRuntimePermissions(pkg)
                     || ArrayUtils.isEmpty(pkg.requestedPermissions)) {
