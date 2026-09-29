@@ -75,6 +75,37 @@ public class SmartspaceManagerService extends
     @Override
     public void onStart() {
         publishBinderService(SMARTSPACE_SERVICE, new SmartspaceManagerStub());
+        registerSmartspacerReceiver(getContext());
+    }
+
+    private void registerSmartspacerReceiver(Context context) {
+        android.content.IntentFilter filter = new android.content.IntentFilter();
+        filter.addAction(android.content.Intent.ACTION_PACKAGE_CHANGED);
+        filter.addAction(android.content.Intent.ACTION_PACKAGE_REMOVED);
+        filter.addAction(android.content.Intent.ACTION_PACKAGE_ADDED);
+        filter.addDataScheme("package");
+        context.registerReceiverForAllUsers(new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context ctx, android.content.Intent intent) {
+                if (intent.getData() == null) return;
+                String pkgName = intent.getData().getSchemeSpecificPart();
+                if ("com.kieronquinn.app.smartspacer".equals(pkgName)) {
+                    Slog.i(TAG, "Smartspacer package state changed (" + intent.getAction()
+                            + "), updating smartspace service");
+                    synchronized (mLock) {
+                        android.os.UserManager um = ctx.getSystemService(android.os.UserManager.class);
+                        if (um != null) {
+                            for (android.content.pm.UserInfo user : um.getAliveUsers()) {
+                                SmartspacePerUserService service = peekServiceForUserLocked(user.id);
+                                if (service != null) {
+                                    service.destroyAndRebindRemoteService();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }, filter, null, null);
     }
 
     @Override

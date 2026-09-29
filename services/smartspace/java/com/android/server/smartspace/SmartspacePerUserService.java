@@ -250,16 +250,56 @@ public class SmartspacePerUserService extends
         destroyAndRebindRemoteService();
     }
 
-    private void destroyAndRebindRemoteService() {
-        if (mRemoteService == null) {
-            return;
+    private static final String SMARTSPACER_PACKAGE = "com.kieronquinn.app.smartspacer";
+    private static final String DEFAULT_AIAI_SERVICE =
+            "com.google.android.as/com.google.android.apps.miphone.aiai.app.AiAiSmartspaceService";
+
+    @GuardedBy("mLock")
+    @Nullable
+    private String getResolvedComponentNameLocked() {
+        final String serviceName = getComponentNameLocked();
+        if (serviceName == null) {
+            return null;
+        }
+        ComponentName component = ComponentName.unflattenFromString(serviceName);
+        if (component == null) {
+            return serviceName;
         }
 
-        if (isDebug()) {
-            Slog.d(TAG, "Destroying the old remote service.");
+        if (SMARTSPACER_PACKAGE.equals(component.getPackageName())) {
+            if (!isPackageEnabled(SMARTSPACER_PACKAGE)) {
+                Slog.i(TAG, "Smartspacer is disabled, falling back to: " + DEFAULT_AIAI_SERVICE);
+                return DEFAULT_AIAI_SERVICE;
+            }
         }
-        mRemoteService.destroy();
-        mRemoteService = null;
+        return serviceName;
+    }
+
+    private boolean isPackageEnabled(String packageName) {
+        try {
+            int state = getContext().getPackageManager()
+                    .getApplicationEnabledSetting(packageName);
+            if (state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    || state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    || state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED) {
+                return false;
+            }
+            android.content.pm.ApplicationInfo ai = getContext().getPackageManager()
+                    .getApplicationInfoAsUser(packageName, 0, mUserId);
+            return ai.enabled;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    void destroyAndRebindRemoteService() {
+        if (mRemoteService != null) {
+            if (isDebug()) {
+                Slog.d(TAG, "Destroying the old remote service.");
+            }
+            mRemoteService.destroy();
+            mRemoteService = null;
+        }
 
         synchronized (mLock) {
             mZombie = true;
@@ -306,7 +346,7 @@ public class SmartspacePerUserService extends
     @Nullable
     private RemoteSmartspaceService getRemoteServiceLocked() {
         if (mRemoteService == null) {
-            final String serviceName = getComponentNameLocked();
+            final String serviceName = getResolvedComponentNameLocked();
             if (serviceName == null) {
                 if (mMaster.verbose) {
                     Slog.v(TAG, "getRemoteServiceLocked(): not set");
