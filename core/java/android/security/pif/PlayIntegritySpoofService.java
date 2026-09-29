@@ -64,7 +64,6 @@ public final class PlayIntegritySpoofService {
 
     private volatile int mVerboseLogs = 0;
     private volatile boolean mSpoofBuild = true;
-    private volatile boolean mSpoofProps = true;
     // Off unless the config asks for it. Upstream defaults this to on, but it makes
     // DroidGuard's getCertificateChain() throw, which would bypass the keybox
     // attestation done in AndroidKeyStoreSpi for a device that has one.
@@ -84,7 +83,6 @@ public final class PlayIntegritySpoofService {
     private volatile boolean mDebug = false;
 
     private final Map<String, String> mBuildFields = new ConcurrentHashMap<>();
-    private final Map<String, String> mSystemProps = new ConcurrentHashMap<>();
 
     private volatile boolean mConfigLoaded = false;
     private volatile boolean mSignatureSpoofed = false;
@@ -101,7 +99,6 @@ public final class PlayIntegritySpoofService {
 
     public void loadConfig() {
         mBuildFields.clear();
-        mSystemProps.clear();
         mConfigLoaded = false;
 
         IActivityManager am = ActivityManager.getService();
@@ -134,18 +131,7 @@ public final class PlayIntegritySpoofService {
             deriveFieldsFromFingerprint();
 
             mConfigLoaded = true;
-            Log.i(TAG, "PIF config loaded, fields=" + mBuildFields.size()
-                + ", props=" + mSystemProps.size());
-
-            // Sync SECURITY_PATCH to system props so apps reading these directly
-            // see the spoofed date, matching what the upstream module does via resetprop.
-            String secPatch = mBuildFields.get("SECURITY_PATCH");
-            if (secPatch != null && !secPatch.isEmpty()) {
-                mSystemProps.put("ro.build.version.security_patch", secPatch);
-                mSystemProps.put("ro.vendor.build.security_patch", secPatch);
-                mSystemProps.put("ro.system.build.version.security_patch", secPatch);
-                mSystemProps.put("ro.product.build.version.security_patch", secPatch);
-            }
+            Log.i(TAG, "PIF config loaded, fields=" + mBuildFields.size());
         } catch (Throwable e) {
             Log.e(TAG, "Failed to load PIF config", e);
         }
@@ -247,7 +233,7 @@ public final class PlayIntegritySpoofService {
                 mSpoofBuild = "1".equals(value) || "true".equalsIgnoreCase(value);
                 break;
             case "spoofProps":
-                mSpoofProps = "1".equals(value) || "true".equalsIgnoreCase(value);
+                // Read by AxSpoofManager, which stages the prop overrides for bionic.
                 break;
             case "spoofProvider":
                 mSpoofProvider = "1".equals(value) || "true".equalsIgnoreCase(value);
@@ -275,9 +261,9 @@ public final class PlayIntegritySpoofService {
                 mDebug = "1".equals(value) || "true".equalsIgnoreCase(value);
                 break;
             default:
-                if (key.contains(".") || key.startsWith("*")) {
-                    mSystemProps.put(key, value);
-                } else {
+                // "*.build.id" style keys are system prop overrides. AxSpoofManager
+                // stages those for bionic, they are not Build fields.
+                if (!key.contains(".") && !key.startsWith("*")) {
                     mBuildFields.put(key, value);
                 }
                 break;
@@ -550,22 +536,6 @@ public final class PlayIntegritySpoofService {
         return false;
     }
 
-    public String getSpoofedProperty(String key) {
-        if (key == null || !mSpoofProps || !mConfigLoaded) return null;
-
-        String value = mSystemProps.get(key);
-        if (value != null) return value;
-
-        for (Map.Entry<String, String> entry : mSystemProps.entrySet()) {
-            String pattern = entry.getKey();
-            if (pattern.startsWith("*") && key.endsWith(pattern.substring(1))) {
-                return entry.getValue();
-            }
-        }
-
-        return null;
-    }
-
     public boolean isSpoofSignatureEnabled() {
         return mSpoofSignature && mConfigLoaded;
     }
@@ -607,10 +577,6 @@ public final class PlayIntegritySpoofService {
 
     public Map<String, String> getBuildFields() {
         return mBuildFields;
-    }
-
-    public Map<String, String> getSystemProps() {
-        return mSystemProps;
     }
 
     public String getSpoofVendingFinger() {
