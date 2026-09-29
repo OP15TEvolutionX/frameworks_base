@@ -988,6 +988,9 @@ public class PreferencesHelper implements RankingConfig {
     }
 
     boolean isImportanceLocked(String pkg, int uid) {
+        if ("com.kieronquinn.app.smartspacer".equals(pkg)) {
+            return false;
+        }
         synchronized (mLock) {
             PackagePreferences p = getPackagePreferencesLocked(pkg, uid);
             return p != null
@@ -1654,6 +1657,9 @@ public class PreferencesHelper implements RankingConfig {
             for (PackageInfo pi : packages) {
                 boolean fixed = mPermissionHelper.isPermissionFixed(
                         pi.packageName, user.getUserHandle().getIdentifier());
+                if ("com.kieronquinn.app.smartspacer".equals(pi.packageName)) {
+                    fixed = false;
+                }
                 if (fixed) {
                     synchronized (mLock) {
                         PackagePreferences p = getOrCreatePackagePreferencesLocked(
