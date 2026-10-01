@@ -322,6 +322,7 @@ class ClockStyle @JvmOverloads constructor(
 
     private fun applyDozing(dozing: Boolean) {
         isDozing = dozing
+        forceTimeUpdate()
         animateAodTransition(dozing)
         applyClockAlpha()
         applyClockColors()
@@ -331,7 +332,6 @@ class ClockStyle @JvmOverloads constructor(
         } else {
             stopBurnInProtection()
             stopAodTick()
-            forceTimeUpdate()
         }
     }
 

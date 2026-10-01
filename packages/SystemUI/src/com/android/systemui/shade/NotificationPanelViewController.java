@@ -2012,12 +2012,6 @@ public final class NotificationPanelViewController implements
         updatePanelExpanded();
         updateGestureExclusionRect();
 
-        if (mQsController.isExpandImmediate() && !mQsController.getFullyExpanded()) {
-            mNotificationStackScrollLayoutController.getView().setAlpha(0f);
-        } else {
-            mNotificationStackScrollLayoutController.getView().setAlpha(1f);
-        }
-
         if (mHeaderImageEnabled) {
             mView.post(() -> updateHeaderImage());
         }
