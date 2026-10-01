@@ -97,6 +97,27 @@ public interface Bubbles {
     }
 
     /**
+     * Show an app in a bubble, if the feature is available.
+     *
+     * @param intent explicit launch intent for a resizable activity
+     * @param user user to launch the activity as
+     */
+    default void showAppBubble(Intent intent, UserHandle user) {
+        IBubbles bubbles = createExternalInterface();
+        if (bubbles != null) {
+            try {
+                bubbles.showAppBubble(
+                        intent,
+                        user,
+                        com.android.wm.shell.shared.bubbles.logging.EntryPoint.LAUNCHER_ICON_MENU,
+                        null);
+            } catch (android.os.RemoteException e) {
+                android.util.Log.w("Bubbles", "Unable to show app bubble", e);
+            }
+        }
+    }
+
+    /**
      * @return {@code true} if there is a bubble associated with the provided key and if its
      * notification is hidden from the shade or there is a group summary associated with the
      * provided key that is hidden from the shade because it has been dismissed but still has child

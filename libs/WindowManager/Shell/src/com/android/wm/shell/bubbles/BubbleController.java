@@ -3668,6 +3668,12 @@ public class BubbleController implements ConfigurationChangeListener,
         }
 
         @Override
+        public void showAppBubble(Intent intent, UserHandle user) {
+            mMainExecutor.execute(() -> BubbleController.this.expandStackAndSelectBubble(
+                    intent, user, EntryPoint.LAUNCHER_ICON_MENU, null));
+        }
+
+        @Override
         public void showOrHideNoteBubble(Intent intent, UserHandle user, @Nullable Icon icon) {
             mMainExecutor.execute(
                     () -> BubbleController.this.showOrHideNotesBubble(intent, user, icon));
