@@ -218,6 +218,7 @@ import javax.inject.Named;
  * may not appreciate that.
  */
 @Module(includes = {
+        com.android.systemui.routines.dagger.RoutinesModule.class,
         ActivityModule.class,
         AmbientModule.class,
         AppOpsModule.class,
