@@ -1725,11 +1725,17 @@ public final class SystemServer implements Dumpable {
             }
 
             t.traceBegin("StartOplusAccessControlManagerService");
-            OplusAccessControlManagerService oplusAccessControl =
-                    new OplusAccessControlManagerService(context);
-            ServiceManager.addService("oplus_accesscontrol", oplusAccessControl);
-            oplusAccessControl.onSystemReady();
-            t.traceEnd();
+            try {
+                OplusAccessControlManagerService oplusAccessControl =
+                        new OplusAccessControlManagerService(context);
+                ServiceManager.addService("oplus_accesscontrol", oplusAccessControl);
+                oplusAccessControl.onSystemReady();
+                Slog.i(TAG, "Oplus Access Control service started");
+            } catch (Throwable e) {
+                Slog.e(TAG, "Failed to start Oplus Access Control service; continuing boot", e);
+            } finally {
+                t.traceEnd();
+            }
 
             // Records errors and logs, for example wtf()
             // Currently this service indirectly depends on SettingsProvider so do this after
