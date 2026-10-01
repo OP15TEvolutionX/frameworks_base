@@ -367,6 +367,9 @@ public class UdfpsController implements DozeReceiver, Dumpable {
                 mFgExecutor.execute(() -> hideUdfpsAnimation());
             }
             mSkipLingerOnNextUnconfigure = false;
+            if (!useStagedRefreshRateRelease()) {
+                return;
+            }
             if (!mOnFingerDown && mOverlay != null) {
                 final View view = mOverlay.getTouchOverlay();
                 if (view instanceof UdfpsTouchOverlay udfpsView && !udfpsView.isDisplayConfigured()) {
@@ -1174,7 +1177,16 @@ public class UdfpsController implements DozeReceiver, Dumpable {
 
     private boolean mSkipLingerOnNextUnconfigure = false;
 
+    private boolean useStagedRefreshRateRelease() {
+        return mContext.getResources().getBoolean(
+                com.android.systemui.res.R.bool.config_udfps_staged_refresh_rate_release);
+    }
+
     private void scheduleUnconfigureDisplay(View view) {
+        if (!useStagedRefreshRateRelease()) {
+            unconfigureDisplay(view);
+            return;
+        }
         if (!isOptical() || !(view instanceof UdfpsTouchOverlay udfpsView)) {
             return;
         }
