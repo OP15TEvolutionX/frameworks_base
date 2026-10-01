@@ -410,6 +410,7 @@ android_library {
     use_resource_processor: true,
     enable_ksp: true,
     resource_dirs: [
+        "routines-res",
         "res-product",
         "res-keyguard",
         "res",
@@ -476,6 +477,7 @@ java_defaults {
 android_library {
     name: "SystemUI-core",
     srcs: [
+        ":evolution-routines-systemui-srcs",
         "src/**/*.kt",
         "src/**/*.java",
         "src/**/I*.aidl",
