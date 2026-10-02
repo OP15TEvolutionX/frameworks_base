@@ -14737,6 +14737,44 @@ public final class Settings {
         public static final String CLOCK_TEXT_OPACITY = "clock_text_opacity";
 
         /**
+         * Idle Manager enabled state.
+         * @hide
+         */
+        public static final String IDLE_MANAGER = "idle_manager";
+
+        /**
+         * @hide
+         */
+        public static final String IDLE_MANAGER_APPS = "idle_manager_apps";
+
+        /**
+         * Global Idle Manager timeout policy.
+         * @hide
+         */
+        public static final String IDLE_MANAGER_POLICY = "idle_manager_policy";
+
+        /**
+         * @hide
+         */
+        public static final String IDLE_MANAGER_TIMEOUT = "idle_manager_timeout";
+
+        /**
+         * @hide
+         */
+        public static final String IDLE_MANAGER_KILL_STATS = "idle_manager_kill_stats";
+
+        /**
+         * @hide
+         */
+        public static final String IDLE_MANAGER_RESTORE_PENDING = "idle_manager_restore_pending";
+
+        /**
+         * Original and applied standby buckets for Idle Manager recovery.
+         * @hide
+         */
+        public static final String IDLE_MANAGER_BUCKET_STATES = "idle_manager_bucket_states";
+
+        /**
          * @hide
          */
         public static final String LOCK_SCREEN_CUSTOM_CLOCK_STYLE = "lock_screen_custom_clock_style";

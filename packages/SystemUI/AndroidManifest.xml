@@ -426,6 +426,11 @@
     <!-- To be able to set unrestricted system gesture exclusion rects -->
     <uses-permission android:name="android.permission.SET_UNRESTRICTED_GESTURE_EXCLUSION"/>
 
+    <!-- Idle Manager applies per-app standby and process policies. -->
+    <uses-permission android:name="android.permission.CHANGE_APP_IDLE_STATE" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
+
     <!-- Motion Cues -->
     <uses-permission android:name="android.permission.BIND_MOTION_CUES_SERVICE"/>
 
