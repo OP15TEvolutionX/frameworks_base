@@ -4246,7 +4246,14 @@ public class ActivityManagerService extends IActivityManager.Stub
                 if (appInfo != null) {
                     // When killing processes, all processes related to a packageName are now killed
                     // including PCC processes.
-                    forceStopPackageLocked(packageName, appInfo.uid, "clear data");
+                    if ("com.kieronquinn.app.smartspacer".equals(packageName)
+                            && (appInfo.flags & ApplicationInfo.FLAG_PERSISTENT) != 0) {
+                        // Defer the persistent restart until its on-disk data has been cleared.
+                        forceStopPackageLocked(packageName, UserHandle.getAppId(appInfo.uid),
+                                true, false, true, true, false, false, resolvedUserId, "clear data");
+                    } else {
+                        forceStopPackageLocked(packageName, appInfo.uid, "clear data");
+                    }
 
                     // The following will kill all tasks, including PCC, as the tasks to be killed
                     // are filtered based on packageName and userId
@@ -4261,6 +4268,10 @@ public class ActivityManagerService extends IActivityManager.Stub
                     if (appInfo != null) {
                         synchronized (mGlobalLock) {
                             finishForceStopPackageLocked(packageName, appInfo.uid);
+                            if ("com.kieronquinn.app.smartspacer".equals(packageName)
+                                    && (appInfo.flags & ApplicationInfo.FLAG_PERSISTENT) != 0) {
+                                addAppLocked(appInfo, null, false, null, ZYGOTE_POLICY_FLAG_EMPTY);
+                            }
                         }
                     }
 
