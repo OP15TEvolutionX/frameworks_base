@@ -1143,7 +1143,6 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         public void onWakeUp() {
             synchronized (mLock) {
                 if (shouldEnableWakeGestureLp()) {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY, "Wake Up");
                     mWindowWakeUpPolicy.wakeUpFromWakeGesture();
                 }
             }

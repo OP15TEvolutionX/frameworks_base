@@ -479,7 +479,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     };
 
     public boolean isPocketLockVisible(){
-        return mPocketManager.isPocketLockVisible();
+        return mPocketManager != null && mPocketManager.isPocketLockVisible();
     }
 
     private boolean mIsProximityNear = false;
