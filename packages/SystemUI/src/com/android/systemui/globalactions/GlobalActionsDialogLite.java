@@ -3378,18 +3378,11 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             window.setTitle(""); // prevent Talkback from speaking first item name twice
             window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            if (mBlurUtils.supportsBlursOnWindows()) {
-                // Enable blur behind
-                // Enable dim behind since we are setting some amount dim for the blur.
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
-                // Set blur behind radius
-                int blurBehindRadius = mContext.getResources()
-                        .getDimensionPixelSize(com.android.systemui.res.R.dimen.max_window_blur_radius);
-                window.getAttributes().setBlurBehindRadius(blurBehindRadius);
-                window.setDimAmount(0.54f);
-            } else {
-                window.setDimAmount(0.88f);
-            }
+            // Keep the shade's existing blur without blurring it again behind this dialog.
+            window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+            window.getAttributes().setBlurBehindRadius(0);
+            window.setBackgroundBlurRadius(0);
+            window.setDimAmount(0.54f);
             // If user entered from the lock screen and smart lock was enabled, disable it
             int user = mSelectedUserInteractor.getSelectedUserId();
             boolean userHasTrust = mKeyguardUpdateMonitor.getUserHasTrust(user);
