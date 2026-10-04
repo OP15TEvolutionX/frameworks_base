@@ -145,17 +145,12 @@ object KeyguardRootViewBinder {
                             deviceEntryHapticsInteractor.playSuccessHapticOnDeviceEntry.collect {
                                 if (!isFpHapticEnabled(context, Settings.System.FP_SUCCESS_VIBRATE)) return@collect
 
-                                val playedMsdl = msdlFeedback() && (msdlPlayer?.let {
-                                    it.playToken(MSDLToken.UNLOCK, authInteractionProperties)
-                                    true
-                                } == true)
-
-                                if (!playedMsdl) {
-                                    vibratorHelper.performHapticFeedback(
-                                        view,
-                                        HapticFeedbackConstants.BIOMETRIC_CONFIRM
-                                    )
-                                }
+                                // Successful biometric entry should produce one pulse, rather than
+                                // the two-part MSDL UNLOCK effect.
+                                vibratorHelper.performHapticFeedback(
+                                    view,
+                                    HapticFeedbackConstants.BIOMETRIC_CONFIRM
+                                )
                             }
                         }
 
