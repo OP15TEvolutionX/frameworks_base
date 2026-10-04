@@ -1298,7 +1298,20 @@ public class RecentsTransitionHandler implements Transitions.TransitionHandler,
                         return;
                     }
                     // Don't consider stationary & non-leaf changes as changing apps.
-                    if (isLeafTask && !TransitionUtil.isStationary(change)) {
+                    if (taskInfo != null && taskInfo.topActivityType == ACTIVITY_TYPE_HOME
+                            && !isRecentsTask
+                            && taskInfo.getWindowingMode() == WINDOWING_MODE_FULLSCREEN
+                            && (change.getFlags() & ~TransitionInfo.FLAG_SHOW_WALLPAPER) == 0
+                            && change.getStartAbsBounds().equals(change.getEndAbsBounds())
+                            && change.getStartRotation() == change.getEndRotation()
+                            && change.getStartDisplayId() == change.getEndDisplayId()
+                            && (change.getLastParent() == null
+                                    || change.getLastParent().equals(change.getParent()))) {
+                        // Launcher can close its embedded overlay with a CHANGE on the home task.
+                        // Without geometry, ordering or visibility changes, this must not cancel
+                        // an ongoing gesture merely because there are no tasks to open or close.
+                        hasInterestingTaskChanges = false;
+                    } else if (isLeafTask && !TransitionUtil.isStationary(change)) {
                         hasChangingApp = true;
                         // Check if the changing app is moving to top and fullscreen. This handles
                         // the case where we moved from desktop to recents and launching a desktop
