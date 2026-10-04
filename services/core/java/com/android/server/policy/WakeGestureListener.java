@@ -19,6 +19,8 @@ package com.android.server.policy;
 import android.os.Handler;
 import android.content.Context;
 import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.hardware.TriggerEvent;
 import android.hardware.TriggerEventListener;
@@ -44,6 +46,10 @@ public abstract class WakeGestureListener {
         mHandler = handler;
 
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_WAKE_GESTURE);
+        if (mSensor == null) {
+            // Some sensor HALs expose pickup motion as a wake-up tilt detector.
+            mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_TILT_DETECTOR, true);
+        }
     }
 
     public abstract void onWakeUp();
@@ -57,8 +63,12 @@ public abstract class WakeGestureListener {
     public void requestWakeUpTrigger() {
         synchronized (mLock) {
             if (mSensor != null && !mTriggerRequested) {
-                mTriggerRequested = true;
-                mSensorManager.requestTriggerSensor(mListener, mSensor);
+                if (mSensor.getReportingMode() == Sensor.REPORTING_MODE_ONE_SHOT) {
+                    mTriggerRequested = mSensorManager.requestTriggerSensor(mListener, mSensor);
+                } else {
+                    mTriggerRequested = mSensorManager.registerListener(mTiltListener, mSensor,
+                            SensorManager.SENSOR_DELAY_NORMAL, mHandler);
+                }
             }
         }
     }
@@ -67,7 +77,11 @@ public abstract class WakeGestureListener {
         synchronized (mLock) {
             if (mSensor != null && mTriggerRequested) {
                 mTriggerRequested = false;
-                mSensorManager.cancelTriggerSensor(mListener, mSensor);
+                if (mSensor.getReportingMode() == Sensor.REPORTING_MODE_ONE_SHOT) {
+                    mSensorManager.cancelTriggerSensor(mListener, mSensor);
+                } else {
+                    mSensorManager.unregisterListener(mTiltListener, mSensor);
+                }
             }
         }
     }
@@ -89,6 +103,25 @@ public abstract class WakeGestureListener {
                 mHandler.post(mWakeUpRunnable);
             }
         }
+    };
+
+    private final SensorEventListener mTiltListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            synchronized (mLock) {
+                if (!mTriggerRequested) {
+                    return;
+                }
+                // Treat tilt as one-shot, matching the native wake gesture path. Do not
+                // depend on the payload: vendor pickup sensors can use a different value.
+                mTriggerRequested = false;
+                mSensorManager.unregisterListener(this, mSensor);
+                mHandler.post(mWakeUpRunnable);
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {}
     };
 
     private final Runnable mWakeUpRunnable = new Runnable() {

@@ -21,6 +21,7 @@ import android.annotation.NonNull;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Insets;
+import android.util.TypedValue;
 import android.view.Display;
 import android.view.DisplayCutout;
 import android.view.Surface;
@@ -45,7 +46,7 @@ public final class SystemBarUtils {
      * Gets the status bar height with a specific display cutout.
      */
     public static int getStatusBarHeight(Resources res, DisplayCutout cutout) {
-        final int defaultSize = res.getDimensionPixelSize(R.dimen.status_bar_height_default);
+        final int defaultSize = getStatusBarDefaultHeight(res, cutout);
         final int safeInsetTop = cutout == null ? 0 : cutout.getSafeInsetTop();
         final int waterfallInsetTop = cutout == null ? 0 : cutout.getWaterfallInsets().top;
         // The status bar height should be:
@@ -77,11 +78,24 @@ public final class SystemBarUtils {
             insets = Insets.of(rotated.getSafeInsets());
             waterfallInsets = rotated.getWaterfallInsets();
         }
-        final int defaultSize =
-                context.getResources().getDimensionPixelSize(R.dimen.status_bar_height_default);
+        final int defaultSize = getStatusBarDefaultHeight(context.getResources(), cutout);
         // The status bar height should be:
         // Max(top cutout size, (status bar default height + waterfall top size))
         return Math.max(insets.top, defaultSize + waterfallInsets.top);
+    }
+
+    private static int getStatusBarDefaultHeight(Resources res, DisplayCutout cutout) {
+        final int height = res.getDimensionPixelSize(R.dimen.status_bar_height_default);
+        final TypedValue value = new TypedValue();
+        res.getValue(R.dimen.status_bar_height_default, value, true);
+        // Pixel dimensions describe native panel geometry, just like the cutout path.
+        // Density-based dimensions already follow the display density and must not be scaled again.
+        if (value.type != TypedValue.TYPE_DIMENSION
+                || value.getComplexUnit() != TypedValue.COMPLEX_UNIT_PX || cutout == null) {
+            return height;
+        }
+        final float ratio = cutout.getCutoutPathParserInfo().getPhysicalPixelDisplaySizeRatio();
+        return ratio > 0 && Float.isFinite(ratio) ? Math.round(height * ratio) : height;
     }
 
     /**
