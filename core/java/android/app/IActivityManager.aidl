@@ -78,6 +78,8 @@ import android.os.WorkSource;
 import android.service.voice.IVoiceInteractionSession;
 import android.view.RemoteAnimationDefinition;
 import android.view.RemoteAnimationAdapter;
+import com.android.internal.kernel.AxKernelControl;
+import com.android.internal.kernel.AxKernelMetrics;
 import com.android.internal.app.HiddenNotificationInfo;
 import com.android.internal.app.IAppLockStateListener;
 import com.android.internal.app.IAppSessionListener;
@@ -1125,4 +1127,18 @@ interface IActivityManager {
     boolean isThreeFingersSwipeActive();
     void setThreeFingersSwipeActive(boolean active);
     void setThreeGestureStateActive(boolean active);
+
+    // Kernel Manager (device-owner hardware controls).
+    @EnforcePermission("DEVICE_POWER")
+    List<AxKernelControl> getAxKernelControls();
+    @EnforcePermission("DEVICE_POWER")
+    boolean setAxKernelControlValue(String id, int value);
+    @EnforcePermission("DEVICE_POWER")
+    AxKernelMetrics getAxKernelMetrics(long activeTicks, long totalTicks);
+    @EnforcePermission("DEVICE_POWER")
+    boolean getAxKernelApplyOnBoot();
+    @EnforcePermission("DEVICE_POWER")
+    boolean setAxKernelApplyOnBoot(boolean enabled);
+    @EnforcePermission("DEVICE_POWER")
+    boolean resetAxKernelControls();
 }

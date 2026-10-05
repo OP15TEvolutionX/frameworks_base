@@ -500,6 +500,9 @@ import com.android.internal.util.NamedLock;
 import com.android.internal.util.Preconditions;
 import com.android.internal.util.function.pooled.PooledLambda;
 import com.android.server.AlarmManagerInternal;
+import com.android.internal.kernel.AxKernelControl;
+import com.android.internal.kernel.AxKernelMetrics;
+import com.android.server.kernel.AxKernelManagerService;
 import com.android.server.AxExtServiceFactory;
 import com.android.server.BootReceiver;
 import com.android.server.DeviceIdleInternal;
@@ -1479,6 +1482,7 @@ public class ActivityManagerService extends IActivityManager.Stub
      * Information about and control over application operations
      */
     final AppOpsService mAppOpsService;
+    private volatile AxKernelManagerService mAxKernelManager;
     private AppOpsManager mAppOpsManager;
 
     /**
@@ -9934,6 +9938,8 @@ public class ActivityManagerService extends IActivityManager.Stub
                     mConstants.mComponentAliasOverrides);
             t.traceEnd(); // componentAlias
             
+            mAxKernelManager = AxKernelManagerService.getInstance(mContext);
+            mAxKernelManager.systemReady();
             AxExtServiceFactory.systemReady();
 
             t.traceEnd(); // PhaseActivityManagerReady
@@ -21631,4 +21637,52 @@ public class ActivityManagerService extends IActivityManager.Stub
     public void setThreeGestureStateActive(boolean active) {
         mThreeFingerGestureActive = active;
     }
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public List<AxKernelControl> getAxKernelControls() {
+        getAxKernelControls_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null ? service.getControls() : java.util.Collections.emptyList();
+    }
+
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public boolean setAxKernelControlValue(String id, int value) {
+        setAxKernelControlValue_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null && service.setControlValue(id, value);
+    }
+
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public AxKernelMetrics getAxKernelMetrics(long activeTicks, long totalTicks) {
+        getAxKernelMetrics_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null ? service.getMetrics(activeTicks, totalTicks) : null;
+    }
+
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public boolean getAxKernelApplyOnBoot() {
+        getAxKernelApplyOnBoot_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null && service.getApplyOnBoot();
+    }
+
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public boolean setAxKernelApplyOnBoot(boolean enabled) {
+        setAxKernelApplyOnBoot_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null && service.setApplyOnBoot(enabled);
+    }
+
+    @Override
+    @EnforcePermission(android.Manifest.permission.DEVICE_POWER)
+    public boolean resetAxKernelControls() {
+        resetAxKernelControls_enforcePermission();
+        AxKernelManagerService service = mAxKernelManager;
+        return service != null && service.resetControls();
+    }
+
 }

@@ -19,6 +19,7 @@ filegroup {
     srcs: [
         "**/*.aidl",
         "**/*.java",
+        ":evolution-kernel-manager-common-srcs",
         ":framework-nfc-non-updatable-sources",
         ":messagequeue-gen",
         ":ranging_stack_mock_initializer",
