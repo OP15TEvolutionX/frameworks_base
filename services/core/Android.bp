@@ -145,6 +145,7 @@ java_library_static {
         ":services.core-aidl-sources",
         ":services.core-sources",
         ":services.core.protologsrc",
+        ":evolution-kernel-manager-server-srcs",
         ":platform-compat-config",
         ":platform-compat-overrides",
         ":display-device-config",
