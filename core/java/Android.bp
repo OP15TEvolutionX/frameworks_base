@@ -20,6 +20,7 @@ filegroup {
         "**/*.aidl",
         "**/*.java",
         ":ax_sandbox_common_sources",
+        ":evolution-kernel-manager-common-srcs",
         ":framework-nfc-non-updatable-sources",
         ":messagequeue-gen",
         ":ranging_stack_mock_initializer",
