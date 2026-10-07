@@ -146,6 +146,7 @@ java_library_static {
         ":services.core-sources",
         ":services.core.protologsrc",
         ":evolution-kernel-manager-server-srcs",
+        ":evolution-quick-share-server-srcs",
         ":platform-compat-config",
         ":platform-compat-overrides",
         ":display-device-config",
