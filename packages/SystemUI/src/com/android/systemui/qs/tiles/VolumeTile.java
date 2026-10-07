@@ -22,7 +22,6 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.media.AudioManager;
-import android.provider.Settings;
 import android.service.quicksettings.Tile;
 
 import androidx.annotation.Nullable;
@@ -41,6 +40,8 @@ import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.res.R;
+import com.android.systemui.volume.domain.interactor.VolumePanelNavigationInteractor;
+import com.android.systemui.volume.ui.navigation.VolumeNavigator;
 
 import javax.inject.Inject;
 
@@ -48,7 +49,9 @@ public class VolumeTile extends QSTileImpl<BooleanState> {
 
     public static final String TILE_SPEC = "volume_panel";
 
-    private static final Intent SOUND_SETTINGS = new Intent(Settings.Panel.ACTION_VOLUME);
+    private final Handler mMainHandler;
+    private final VolumeNavigator mVolumeNavigator;
+    private final VolumePanelNavigationInteractor mVolumePanelNavigationInteractor;
 
     @Inject
     public VolumeTile(
@@ -60,10 +63,15 @@ public class VolumeTile extends QSTileImpl<BooleanState> {
             MetricsLogger metricsLogger,
             StatusBarStateController statusBarStateController,
             ActivityStarter activityStarter,
-            QSLogger qsLogger
+            QSLogger qsLogger,
+            VolumeNavigator volumeNavigator,
+            VolumePanelNavigationInteractor volumePanelNavigationInteractor
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
                 statusBarStateController, activityStarter, qsLogger);
+        mMainHandler = mainHandler;
+        mVolumeNavigator = volumeNavigator;
+        mVolumePanelNavigationInteractor = volumePanelNavigationInteractor;
     }
 
     @Override
@@ -73,8 +81,16 @@ public class VolumeTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
+    protected void handleLongClick(@Nullable Expandable expandable) {
+        // handleLongClick runs on the tile's background looper; the panel needs the main thread
+        mMainHandler.post(() -> mVolumeNavigator.openVolumePanel(
+                mVolumePanelNavigationInteractor.getVolumePanelRoute()));
+    }
+
+    @Override
+    @Nullable
     public Intent getLongClickIntent() {
-        return SOUND_SETTINGS;
+        return null;
     }
 
     @Override
