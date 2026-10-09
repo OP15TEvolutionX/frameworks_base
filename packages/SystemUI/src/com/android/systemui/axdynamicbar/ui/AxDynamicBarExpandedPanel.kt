@@ -173,7 +173,7 @@ constructor(
             setOnTouchListener { _, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_OUTSIDE -> {
-                        viewModel.collapseFromOutsideTouch(event.eventTime)
+                        viewModel.collapseFromOutsideTouch(event.downTime)
                         true
                     }
                     MotionEvent.ACTION_DOWN ->

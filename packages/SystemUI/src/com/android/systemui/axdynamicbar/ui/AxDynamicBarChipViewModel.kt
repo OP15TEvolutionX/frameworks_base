@@ -12,6 +12,7 @@ import com.android.systemui.statusbar.KeyguardIndicationController
 import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryInteractor
 import com.android.systemui.statusbar.policy.BatteryController
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -175,19 +176,21 @@ constructor(
 
     val isKeyguardExpanded: StateFlow<Boolean> = keyguardExpansion.isExpanded
 
-    @Volatile private var lastOutsideCollapseTime = 0L
+    @Volatile private var outsideCollapseDownTime = NO_OUTSIDE_COLLAPSE
 
-    /** Called by the overlay on ACTION_OUTSIDE. Only acts if the panel was open. */
-    fun collapseFromOutsideTouch(eventTime: Long) {
-        if (statusBarExpansion.isExpanded.value) {
-            lastOutsideCollapseTime = eventTime
-            statusBarExpansion.collapse()
-        }
+    fun collapseFromOutsideTouch(downTime: Long) {
+        if (!statusBarExpansion.isExpanded.value) return
+        outsideCollapseDownTime = downTime
+        statusBarExpansion.collapse()
     }
 
-    /** True if the panel was just closed by the same touch that produced this tap. */
-    fun tapFollowsOutsideCollapse(downTime: Long): Boolean =
-        lastOutsideCollapseTime >= downTime - 100
+    fun chipTapClosesPanel(downTime: Long): Boolean {
+        val outside = outsideCollapseDownTime
+        outsideCollapseDownTime = NO_OUTSIDE_COLLAPSE
+        val sameGesture =
+            outside != NO_OUTSIDE_COLLAPSE && abs(downTime - outside) <= SAME_GESTURE_TOLERANCE_MS
+        return sameGesture || statusBarExpansion.isExpanded.value
+    }
 
     fun cycleNext() = interactor.cycleNext()
 
@@ -228,6 +231,8 @@ constructor(
 
     companion object {
         private const val LOW_UDFPS_THRESHOLD = 0.93f
+        private const val NO_OUTSIDE_COLLAPSE = -1L
+        private const val SAME_GESTURE_TOLERANCE_MS = 100L
     }
 
     private fun formatChargingString(text: String?): String {

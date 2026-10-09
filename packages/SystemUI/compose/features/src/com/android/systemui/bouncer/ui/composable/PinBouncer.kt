@@ -105,7 +105,6 @@ fun PinPad(viewModel: PinBouncerViewModel, verticalSpacing: Dp, modifier: Modifi
     val animateFailure: Boolean by viewModel.animateFailure.collectAsStateWithLifecycle()
     val isDigitButtonAnimationEnabled: Boolean by
         viewModel.isDigitButtonAnimationEnabled.collectAsStateWithLifecycle()
-    val digitOrder: List<Int> by viewModel.digitOrder.collectAsStateWithLifecycle()
 
     val buttonScaleAnimatables = remember { List(12) { Animatable(1f) } }
     LaunchedEffect(animateFailure) {
@@ -125,6 +124,8 @@ fun PinPad(viewModel: PinBouncerViewModel, verticalSpacing: Dp, modifier: Modifi
     val context = LocalContext.current
     val accessibilityManager = remember(context) { AccessibilityManager.getInstance(context) }
 
+    val scrambledDigits by viewModel.scrambledDigits.collectAsStateWithLifecycle()
+
     VerticalGrid(
         columns = columns,
         verticalSpacing = verticalSpacing,
@@ -139,7 +140,7 @@ fun PinPad(viewModel: PinBouncerViewModel, verticalSpacing: Dp, modifier: Modifi
     ) {
         repeat(9) { index ->
             DigitButton(
-                digit = digitOrder[index],
+                digit = scrambledDigits[index],
                 isInputEnabled = isInputEnabled,
                 onClicked = { digit ->
                     sendAccessibilityEvent(
@@ -199,16 +200,16 @@ fun PinPad(viewModel: PinBouncerViewModel, verticalSpacing: Dp, modifier: Modifi
         )
 
         DigitButton(
-            digit = digitOrder[9],
+            digit = scrambledDigits[9],
             isInputEnabled = isInputEnabled,
             onClicked = {
                 sendAccessibilityEvent(view = view, accessibilityManager = accessibilityManager) {
                     PinAccessibilityEvent.DigitAdded(
                         pinLengthBeforeChange = viewModel.enteredPinLength,
-                        digitAdded = digitOrder[9],
+                        digitAdded = scrambledDigits[9],
                     )
                 }
-                viewModel.onPinButtonClicked(digitOrder[9])
+                viewModel.onPinButtonClicked(scrambledDigits[9])
             },
             scaling = buttonScaleAnimatables[10]::value,
             isAnimationEnabled = isDigitButtonAnimationEnabled,
