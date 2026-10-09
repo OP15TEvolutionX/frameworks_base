@@ -59,6 +59,7 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
@@ -474,6 +475,64 @@ class AppLockPackageHelperTest : PackageHelperTestBase() {
     }
 
     @Test
+    fun isPackageAppLockEnabled_systemChooser_returnsRealState(
+        @TestParameter enabled: Boolean,
+        @TestParameter secondaryUser: Boolean,
+    ) {
+        testInjector.chooserPackageName = "system.chooser"
+        val chooserState: PackageStateInternal = mock()
+        whenever(mockSnapshot.getPackageStateInternal("system.chooser")).thenReturn(chooserState)
+        whenever(chooserState.isSystem).thenReturn(true)
+        whenever(chooserState.appId).thenReturn(APP_UID)
+        whenever(mockPackageUserStateInternal1.isAppLockEnabled).thenReturn(enabled)
+        val callingUid = UserHandle.getUid(if (secondaryUser) TEST_USER_ID_1 else 0, APP_UID)
+
+        assertThat(appLockPackageHelper.isPackageAppLockEnabled(
+            mockSnapshot, TEST_PACKAGE_NAME, TEST_USER_ID_1, callingUid
+        )).isEqualTo(enabled)
+        verify(mockSnapshot).enforceCrossUserPermission(
+            callingUid, TEST_USER_ID_1, true, false, "isPackageAppLockEnabled"
+        )
+    }
+
+    @Test
+    fun isPackageAppLockEnabled_chooserWithoutCrossUserPermission_throwsException() {
+        testInjector.chooserPackageName = "system.chooser"
+        val chooserState: PackageStateInternal = mock()
+        whenever(mockSnapshot.getPackageStateInternal("system.chooser")).thenReturn(chooserState)
+        whenever(chooserState.isSystem).thenReturn(true)
+        whenever(chooserState.appId).thenReturn(APP_UID)
+        doThrow(SecurityException("Cross-user access denied"))
+            .`when`(mockSnapshot).enforceCrossUserPermission(
+                APP_UID, TEST_USER_ID_1, true, false, "isPackageAppLockEnabled"
+            )
+
+        assertFailsWith<SecurityException> {
+            appLockPackageHelper.isPackageAppLockEnabled(
+                mockSnapshot, TEST_PACKAGE_NAME, TEST_USER_ID_1, APP_UID
+            )
+        }
+        verify(mockPackageUserStateInternal1, never()).isAppLockEnabled
+    }
+
+    @Test
+    fun isPackageAppLockEnabled_untrustedChooser_throwsException(
+        @TestParameter systemPackage: Boolean,
+    ) {
+        testInjector.chooserPackageName = "system.chooser"
+        val chooserState: PackageStateInternal = mock()
+        whenever(mockSnapshot.getPackageStateInternal("system.chooser")).thenReturn(chooserState)
+        whenever(chooserState.isSystem).thenReturn(systemPackage)
+        // A system package with a different UID must not authorize the caller either.
+        whenever(chooserState.appId).thenReturn(if (systemPackage) APP_UID + 1 else APP_UID)
+        assertFailsWith<SecurityException> {
+            appLockPackageHelper.isPackageAppLockEnabled(
+                mockSnapshot, TEST_PACKAGE_NAME, TEST_USER_ID_1, APP_UID
+            )
+        }
+    }
+
+    @Test
     @Throws(Exception::class)
     fun getEnableAppLockIntentForPackage_appLockIsNotSupported_nullIntent() {
         whenever(mockAndroidPackage.activities).thenReturn(
@@ -666,6 +725,9 @@ class AppLockPackageHelperTest : PackageHelperTestBase() {
 
     private class TestInjector : AppLockPackageHelper.Injector {
         private var mIsDeviceSecure = false
+        var chooserPackageName: String? = null
+
+        override fun getChooserPackageName(context: Context?): String? = chooserPackageName
 
         fun setDeviceSecure(isDeviceSecure: Boolean) {
             mIsDeviceSecure = isDeviceSecure

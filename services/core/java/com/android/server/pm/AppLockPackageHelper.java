@@ -23,6 +23,7 @@ import android.app.ActivityOptions;
 import android.app.KeyguardManager;
 import android.app.PendingIntent;
 import android.app.supervision.SupervisionManagerInternal;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -244,7 +245,8 @@ public final class AppLockPackageHelper {
     }
 
     /**
-     * Checks if the package has App Lock enabled. This can only be called by the system.
+     * Checks if the package has App Lock enabled. Only the system and the configured system
+     * Sharesheet may query this state.
      *
      * @param snapshot    Computer snapshot
      * @param packageName Name of the package to set the App Lock enablement state for
@@ -256,7 +258,19 @@ public final class AppLockPackageHelper {
             int userId, int callingUid) {
         if (!UserHandle.isSameApp(callingUid, Process.SYSTEM_UID)
                 && !UserHandle.isSameApp(callingUid, Process.ROOT_UID)) {
-            throw new SecurityException("isPackageAppLockEnabled can only be called by the system");
+            final String chooserPackage = mInjector.getChooserPackageName(mContext);
+            final PackageStateInternal chooserState = chooserPackage == null ? null
+                    : snapshot.getPackageStateInternal(chooserPackage);
+            if (callingUid < 0 || chooserState == null || !chooserState.isSystem()
+                    || chooserState.getAppId() != UserHandle.getAppId(callingUid)) {
+                throw new SecurityException("isPackageAppLockEnabled can only be called by "
+                        + "the system or the system Sharesheet");
+            }
+            // The Sharesheet has its own app UID. Permit its read-only query, while retaining
+            // cross-user permission checks and the real App Lock state for locked apps.
+            snapshot.enforceCrossUserPermission(callingUid, userId,
+                    /* requireFullPermission= */ true, /* checkShell= */ false,
+                    "isPackageAppLockEnabled");
         }
         return isPackageAppLockEnabled(snapshot, packageName, userId);
     }
@@ -407,6 +421,13 @@ public final class AppLockPackageHelper {
     @VisibleForTesting
     interface Injector {
         boolean isDeviceSecure(Context context, int userId);
+
+        default String getChooserPackageName(Context context) {
+            final ComponentName chooser = ComponentName.unflattenFromString(
+                    context.getResources().getString(
+                            com.android.internal.R.string.config_chooserActivity));
+            return chooser == null ? null : chooser.getPackageName();
+        }
     }
 
     private static final class InjectorImpl implements Injector {
