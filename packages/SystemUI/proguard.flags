@@ -5,3 +5,6 @@
 }
 
 -keep,allowoptimization,allowaccessmodification class com.android.systemui.dagger.DaggerReferenceGlobalRootComponent** { !synthetic *; }
+
+# Clipp JNI entry points shared with the native protocol bridge.
+-keep class org.evolution.clipp.ClippCrypto { *; }
