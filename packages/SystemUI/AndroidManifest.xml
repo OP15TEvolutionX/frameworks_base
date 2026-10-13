@@ -92,6 +92,7 @@
     <uses-permission android:name="android.permission.NETWORK_FACTORY" />
     <uses-permission android:name="android.permission.SATELLITE_COMMUNICATION" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Physical hardware -->
     <uses-permission android:name="android.permission.MANAGE_USB" />
     <uses-permission android:name="android.permission.CONTROL_DISPLAY_BRIGHTNESS" />
@@ -484,6 +485,10 @@
         tools:replace="android:appComponentFactory"
         android:appComponentFactory=".PhoneSystemUIAppComponentFactory"
         android:enableOnBackInvokedCallback="true">
+        <provider android:name="com.android.systemui.clipp.ClipboardImageProvider"
+                  android:authorities="com.android.systemui.clipp.images"
+                  android:exported="false" android:grantUriPermissions="true" />
+
         <!-- Keep theme in sync with SystemUIApplication.onCreate().
              Setting the theme on the application does not affect views inflated by services.
              The application theme is set again from onCreate to take effect for those views. -->

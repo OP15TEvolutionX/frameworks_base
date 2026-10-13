@@ -411,6 +411,7 @@ android_library {
     enable_ksp: true,
     resource_dirs: [
         "routines-res",
+        "clipp-res",
         "res-product",
         "res-keyguard",
         "res",
@@ -478,6 +479,7 @@ android_library {
     name: "SystemUI-core",
     srcs: [
         ":evolution-routines-systemui-srcs",
+        ":evolution-clipp-systemui-srcs",
         ":evolution-idle-manager-systemui-srcs",
         "src/**/*.kt",
         "src/**/*.java",
@@ -1100,6 +1102,8 @@ systemui_optimized_java_defaults {
 
 android_app {
     name: "SystemUI",
+    additional_manifests: [":evolution-clipp-systemui-manifest"],
+    jni_libs: ["libevolution_clipp_jni"],
     defaults: [
         "platform_app_defaults",
         "SystemUI_optimized_defaults",
@@ -1127,6 +1131,7 @@ android_app {
         ],
     },
     required: [
+        "clipp-privapp-permissions",
         "privapp_whitelist_com.android.systemui",
     ],
 }
