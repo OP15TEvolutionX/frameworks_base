@@ -15049,6 +15049,12 @@ public final class Settings {
         public static final String IDLE_MANAGER_BUCKET_STATES = "idle_manager_bucket_states";
 
         /**
+         * Original RUN_ANY_IN_BACKGROUND modes for Idle Manager recovery.
+         * @hide
+         */
+        public static final String IDLE_MANAGER_APP_OP_STATES = "idle_manager_app_op_states";
+
+        /**
          * @hide
          */
         public static final String LOCK_SCREEN_CUSTOM_CLOCK_STYLE = "lock_screen_custom_clock_style";
