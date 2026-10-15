@@ -1252,7 +1252,7 @@
     Indicates whether the standalone power menu background should be translucent,
     revealing the blur underneath, or fully opaque.
     -->
-    <bool name="config_translucentStandalonePowerMenu">true</bool>
+    <bool name="config_translucentStandalonePowerMenu">false</bool>
 
     <!--
     Certain devices may not ever want to show lockscreen content, and should be directed
