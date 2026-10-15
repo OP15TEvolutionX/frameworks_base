@@ -2350,6 +2350,11 @@ public final class SystemServer implements Dumpable {
                 mSystemServiceManager.startServiceFromJar(
                         WIFI_SERVICE_CLASS, WIFI_APEX_SERVICE_JAR_PATH);
                 t.traceEnd();
+                if (SystemProperties.getBoolean("ro.quickshare.channel149", false)) {
+                    t.traceBegin("StartQuickShareChannel");
+                    mSystemServiceManager.startService(QuickShareChannelService.class);
+                    t.traceEnd();
+                }
                 t.traceBegin("StartWifiScanning");
                 mSystemServiceManager.startServiceFromJar(
                         WIFI_SCANNING_SERVICE_CLASS, WIFI_APEX_SERVICE_JAR_PATH);
