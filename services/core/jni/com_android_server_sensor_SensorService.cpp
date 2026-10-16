@@ -58,6 +58,7 @@ public:
                                jfloat maximumRange, jfloat resolution, jfloat power, jint minDelay,
                                jint maxDelay, jint flags, jobject callback);
     void unregisterRuntimeSensor(jint handle);
+    void setBlockedSensorPackages(JNIEnv* env, jobjectArray packages);
     jboolean sendRuntimeSensorEvent(JNIEnv* env, jint handle, jint type, jlong timestamp,
                                     jfloatArray values);
     jboolean sendRuntimeSensorAdditionalInfo(JNIEnv* env, jint handle, jint type, jint serial,
@@ -150,6 +151,29 @@ jint NativeSensorService::registerRuntimeSensor(JNIEnv* env, jint deviceId, jint
     sp<RuntimeSensorCallbackDelegate> callbackDelegate(
             new RuntimeSensorCallbackDelegate(env, callback));
     return mService->registerRuntimeSensor(sensor, deviceId, callbackDelegate);
+}
+
+void NativeSensorService::setBlockedSensorPackages(JNIEnv* env, jobjectArray packages) {
+    if (mService == nullptr) {
+        ALOGD("Dropping setBlockedSensorPackages, sensor service not available.");
+        return;
+    }
+    std::vector<String16> pkgList;
+    if (packages != nullptr) {
+        int count = env->GetArrayLength(packages);
+        for (int i = 0; i < count; ++i) {
+            jstring pkg = (jstring) env->GetObjectArrayElement(packages, i);
+            if (pkg != nullptr) {
+                const char* pkgChars = env->GetStringUTFChars(pkg, 0);
+                if (pkgChars != nullptr) {
+                    pkgList.push_back(String16(pkgChars));
+                    env->ReleaseStringUTFChars(pkg, pkgChars);
+                }
+                env->DeleteLocalRef(pkg);
+            }
+        }
+    }
+    mService->setBlockedSensorPackages(pkgList);
 }
 
 void NativeSensorService::unregisterRuntimeSensor(jint handle) {
@@ -361,6 +385,11 @@ static jint registerRuntimeSensorNative(JNIEnv* env, jclass, jlong ptr, jint dev
                                           resolution, power, minDelay, maxDelay, flags, callback);
 }
 
+static void setBlockedSensorPackagesNative(JNIEnv* env, jclass, jlong ptr, jobjectArray packages) {
+    auto* service = reinterpret_cast<NativeSensorService*>(ptr);
+    service->setBlockedSensorPackages(env, packages);
+}
+
 static void unregisterRuntimeSensorNative(JNIEnv* env, jclass, jlong ptr, jint handle) {
     auto* service = reinterpret_cast<NativeSensorService*>(ptr);
     service->unregisterRuntimeSensor(handle);
@@ -389,6 +418,7 @@ static const JNINativeMethod methods[] = {
         {"registerRuntimeSensorNative",
          "(JIILjava/lang/String;Ljava/lang/String;FFFIIIL" RUNTIME_SENSOR_CALLBACK_CLASS ";)I",
          reinterpret_cast<void*>(registerRuntimeSensorNative)},
+        {"setBlockedSensorPackagesNative", "(J[Ljava/lang/String;)V", reinterpret_cast<void*>(setBlockedSensorPackagesNative)},
         {"unregisterRuntimeSensorNative", "(JI)V",
          reinterpret_cast<void*>(unregisterRuntimeSensorNative)},
         {"sendRuntimeSensorEventNative", "(JIIJ[F)Z",
