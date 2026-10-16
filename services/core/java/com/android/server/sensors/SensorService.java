@@ -28,6 +28,14 @@ import com.android.internal.util.ConcurrentUtils;
 import com.android.server.LocalServices;
 import com.android.server.SystemServerInitThreadPool;
 import com.android.server.SystemService;
+import android.database.ContentObserver;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.UserHandle;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.util.Slog;
 import com.android.server.utils.TimingsTraceAndSlog;
 
 import java.util.HashSet;
@@ -61,6 +69,7 @@ public class SensorService extends SystemService {
             int minDelay, int maxDelay, int flags,
             SensorManagerInternal.RuntimeSensorCallback callback);
     private static native void unregisterRuntimeSensorNative(long ptr, int handle);
+    private static native void setBlockedSensorPackagesNative(long ptr, String[] packages);
     private static native boolean sendRuntimeSensorEventNative(long ptr, int handle, int type,
             long timestampNanos, float[] values);
     private static native boolean sendRuntimeSensorAdditionalInfoNative(long ptr, int handle,
@@ -95,6 +104,8 @@ public class SensorService extends SystemService {
             synchronized (mLock) {
                 mSensorServiceStart = null;
             }
+        } else if (phase == SystemService.PHASE_BOOT_COMPLETED) {
+            registerSensorBlockObserver();
         }
     }
 
@@ -189,6 +200,33 @@ public class SensorService extends SystemService {
         @Override
         public void onProximityActive(boolean isActive) {
             mExecutor.execute(() -> mListener.onProximityActive(isActive));
+        }
+    }
+
+    private void registerSensorBlockObserver() {
+        ContentObserver observer = new ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                updateBlockedSensorPackages();
+            }
+        };
+        getContext().getContentResolver().registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.SENSOR_BLOCKED_PACKAGES),
+                false, observer, UserHandle.USER_ALL);
+        updateBlockedSensorPackages();
+    }
+
+    private void updateBlockedSensorPackages() {
+        synchronized (mLock) {
+            if (mPtr == 0) {
+                return;
+            }
+            String raw = Settings.Secure.getString(
+                    getContext().getContentResolver(),
+                    Settings.Secure.SENSOR_BLOCKED_PACKAGES);
+            String[] packages = TextUtils.isEmpty(raw) ? new String[0] : raw.split(";");
+            setBlockedSensorPackagesNative(mPtr, packages);
+            Slog.i("SensorService", "Synchronized " + packages.length + " blocked sensor packages with native");
         }
     }
 
