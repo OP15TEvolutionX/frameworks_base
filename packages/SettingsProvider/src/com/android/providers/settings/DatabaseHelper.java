@@ -2188,6 +2188,8 @@ class DatabaseHelper extends SQLiteOpenHelper {
 
             loadSecure35Settings(stmt);
 
+            loadBooleanSetting(stmt, Settings.Secure.DOUBLE_TAP_TO_SLEEP,
+                    R.bool.def_double_tap_to_sleep);
             loadBooleanSetting(stmt, Settings.Secure.MOUNT_PLAY_NOTIFICATION_SND,
                     R.bool.def_mount_play_notification_snd);
 
