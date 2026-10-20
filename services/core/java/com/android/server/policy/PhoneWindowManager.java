@@ -429,6 +429,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
     private static final int POWER_BUTTON_SUPPRESSION_DELAY_DEFAULT_MILLIS = 800;
 
+    private static final String TORCH_STRENGTH_SETTING = "flashlight_brightness";
     private static final String ACTION_TORCH_OFF =
             "com.android.server.policy.PhoneWindowManager.ACTION_TORCH_OFF";
 
@@ -2754,6 +2755,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         // Lineage additions
         mAlarmManager = mContext.getSystemService(AlarmManager.class);
         mCameraManager = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+        try {
+            // Resolve the torch camera id up front so TorchModeCallback tracks torch
+            // state changes made elsewhere (e.g. QS tile) before the first toggleTorch().
+            getRearFlashCameraId();
+        } catch (CameraAccessException e) {
+            Slog.w(TAG, "Unable to resolve rear flash camera id", e);
+        }
         mCameraManager.registerTorchCallback(new TorchModeCallback(), mHandler);
         mCameraAvailabilityListener = new CameraAvailbilityListener();
         mCameraManager.registerAvailabilityCallback(mCameraAvailabilityListener, mHandler);
@@ -7691,8 +7699,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         try {
             final String rearFlashCameraId = getRearFlashCameraId();
             if (rearFlashCameraId != null) {
-                mCameraManager.setTorchMode(rearFlashCameraId, !mTorchEnabled);
-                mTorchEnabled = !mTorchEnabled;
+                final boolean enable = !mTorchEnabled;
+                final int level = enable ? getSavedTorchStrengthLevel(rearFlashCameraId) : -1;
+                if (level > 0) {
+                    // setTorchMode(true) always starts at the HAL default strength, so use the
+                    // level the user last picked in SystemUI instead.
+                    mCameraManager.turnOnTorchWithStrengthLevel(rearFlashCameraId, level);
+                } else {
+                    mCameraManager.setTorchMode(rearFlashCameraId, enable);
+                }
+                mTorchEnabled = enable;
             }
         } catch (CameraAccessException e) {
             // Ignore
@@ -7709,18 +7725,47 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         }
     }
 
+    /**
+     * Returns the torch strength level last chosen in SystemUI (stored as a fraction of the
+     * maximum level), or -1 if the flash unit does not support strength control.
+     */
+    private int getSavedTorchStrengthLevel(String cameraId) {
+        try {
+            final CameraCharacteristics c = mCameraManager.getCameraCharacteristics(cameraId);
+            final Integer max = c.get(CameraCharacteristics.FLASH_INFO_STRENGTH_MAXIMUM_LEVEL);
+            if (max == null || max <= 1) return -1;
+            final Integer def = c.get(CameraCharacteristics.FLASH_INFO_STRENGTH_DEFAULT_LEVEL);
+            final float fallback = def != null ? (float) def / max : 1f;
+            final float percent = Settings.System.getFloatForUser(mContext.getContentResolver(),
+                    TORCH_STRENGTH_SETTING, fallback, UserHandle.USER_CURRENT);
+            return Math.max(1, Math.min(max, Math.round(percent * max)));
+        } catch (CameraAccessException | RuntimeException e) {
+            return -1;
+        }
+    }
+
     private String getRearFlashCameraId() throws CameraAccessException {
         if (mRearFlashCameraId != null) return mRearFlashCameraId;
+        // Must stay in sync with SystemUI's FlashlightControllerImpl/FlashlightRepository:
+        // prefer the logical multi-camera with flash, since torch callbacks are reported
+        // per camera id and SystemUI only listens to the id it selected.
+        String fallback = null;
         for (final String id : mCameraManager.getCameraIdList()) {
             CameraCharacteristics c = mCameraManager.getCameraCharacteristics(id);
             Boolean flashAvailable = c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
             Integer lensFacing = c.get(CameraCharacteristics.LENS_FACING);
-            if (flashAvailable != null && flashAvailable
-                    && lensFacing != null && lensFacing == CameraCharacteristics.LENS_FACING_BACK) {
-                mRearFlashCameraId = id;
-                break;
+            if (!Boolean.TRUE.equals(flashAvailable) || lensFacing == null
+                    || lensFacing != CameraCharacteristics.LENS_FACING_BACK) {
+                continue;
             }
+            Set<String> physicalIds = c.getPhysicalCameraIds();
+            if (physicalIds != null && !physicalIds.isEmpty()) {
+                mRearFlashCameraId = id;
+                return id;
+            }
+            if (fallback == null) fallback = id;
         }
+        mRearFlashCameraId = fallback;
         return mRearFlashCameraId;
     }
 

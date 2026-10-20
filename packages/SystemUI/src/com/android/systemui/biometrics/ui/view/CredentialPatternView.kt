@@ -38,6 +38,7 @@ fun CredentialPatternView(
     onVerify: suspend (List<Cell>, Byte) -> ByteArray?,
     onSuccess: (ByteArray) -> Unit,
     onPatternCellAdded: () -> Unit,
+    patternSize: Byte,
     stealthMode: Boolean,
     isVisible: Boolean,
     error: String,
@@ -99,6 +100,7 @@ fun CredentialPatternView(
                 }
             },
             update = { view ->
+                view.lockPatternSize = patternSize
                 view.isInStealthMode = stealthMode
 
                 if (!isVisible) {

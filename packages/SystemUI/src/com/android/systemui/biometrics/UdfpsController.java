@@ -164,7 +164,6 @@ public class UdfpsController implements DozeReceiver, Dumpable {
     private final UserActivityNotifier mUserActivityNotifier;
     private final WindowManager mWindowManager;
     private final DelayableExecutor mFgExecutor;
-    private static final long UDFPS_DISPLAY_MODE_LINGER_MS = 1000L;
     @NonNull private final Executor mBiometricExecutor;
     @NonNull private final StatusBarStateController mStatusBarStateController;
     @NonNull private final KeyguardStateController mKeyguardStateController;
@@ -238,8 +237,6 @@ public class UdfpsController implements DozeReceiver, Dumpable {
     private boolean mScreenOn;
     private Runnable mAodInterruptRunnable;
     private boolean mOnFingerDown;
-    private boolean mHalPointerDownReported;
-    private boolean mAuthOutcomeReached;
     private boolean mAttemptedToDismissKeyguard;
     private final Set<Callback> mCallbacks = new HashSet<>();
 
@@ -334,9 +331,7 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         @Override
         public void onBiometricAuthFailed(@NonNull BiometricSourceType type) {
             if (type == FINGERPRINT && mOverlay != null) {
-                mAuthOutcomeReached = true;
                 mFgExecutor.execute(() -> hideUdfpsAnimation());
-                releaseUdfpsDisplayModeImmediately();
             }
         }
 
@@ -344,37 +339,22 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         public void onBiometricError(int msgId, String errString,
                 @NonNull BiometricSourceType type) {
             if (type == FINGERPRINT && mOverlay != null) {
-                mAuthOutcomeReached = true;
                 mFgExecutor.execute(() -> hideUdfpsAnimation());
-                releaseUdfpsDisplayModeImmediately();
             }
         }
 
         @Override
         public void onLockedOutStateChanged(@NonNull BiometricSourceType type) {
             if (type == FINGERPRINT && mOverlay != null) {
-                mAuthOutcomeReached = true;
                 mFgExecutor.execute(() -> hideUdfpsAnimation());
-                releaseUdfpsDisplayModeImmediately();
             }
         }
 
         @Override
         public void onBiometricAuthenticated(int userId, BiometricSourceType type,
                 boolean isStrongBiometric) {
-            mAuthOutcomeReached = true;
             if (mOverlay != null) {
                 mFgExecutor.execute(() -> hideUdfpsAnimation());
-            }
-            mSkipLingerOnNextUnconfigure = false;
-            if (!useStagedRefreshRateRelease()) {
-                return;
-            }
-            if (!mOnFingerDown && mOverlay != null) {
-                final View view = mOverlay.getTouchOverlay();
-                if (view instanceof UdfpsTouchOverlay udfpsView && !udfpsView.isDisplayConfigured()) {
-                    mFgExecutor.execute(() -> reconfigureAndWindDownDisplay(udfpsView));
-                }
             }
         }
     };
@@ -1170,72 +1150,9 @@ public class UdfpsController implements DozeReceiver, Dumpable {
         if (udfpsView.isDisplayConfigured()) {
             udfpsView.unconfigureDisplay();
         }
-    }
-
-    private static final float UDFPS_WIND_DOWN_INTERMEDIATE_HZ = 60f;
-    private static final long UDFPS_WIND_DOWN_INTERMEDIATE_MS = 500L;
-
-    private boolean mSkipLingerOnNextUnconfigure = false;
-
-    private boolean useStagedRefreshRateRelease() {
-        return mContext.getResources().getBoolean(
-                com.android.systemui.res.R.bool.config_udfps_staged_refresh_rate_release);
-    }
-
-    private void scheduleUnconfigureDisplay(View view) {
-        if (!useStagedRefreshRateRelease()) {
-            unconfigureDisplay(view);
-            return;
+        if (mOverlay != null) {
+            mOverlay.setIlluminationRequested(false);
         }
-        if (!isOptical() || !(view instanceof UdfpsTouchOverlay udfpsView)) {
-            return;
-        }
-        if (mSkipLingerOnNextUnconfigure) {
-            mSkipLingerOnNextUnconfigure = false;
-            unconfigureDisplay(view);
-            return;
-        }
-        final Object token = udfpsView.currentDisplayModeToken();
-        if (token == null) {
-            return;
-        }
-        mFgExecutor.executeDelayed(() -> {
-            udfpsView.requestDisplayRateIfCurrent(token, UDFPS_WIND_DOWN_INTERMEDIATE_HZ);
-            mFgExecutor.executeDelayed(
-                    () -> udfpsView.unconfigureDisplayIfCurrent(token),
-                    UDFPS_WIND_DOWN_INTERMEDIATE_MS);
-        }, UDFPS_DISPLAY_MODE_LINGER_MS);
-    }
-
-    private void reconfigureAndWindDownDisplay(UdfpsTouchOverlay udfpsView) {
-        if (udfpsView.isDisplayConfigured()) {
-            // Superseded by a new touch/configuration since this was scheduled; nothing to do.
-            return;
-        }
-        udfpsView.reconfigureDisplayRateOnly(() -> {
-            final Object token = udfpsView.currentDisplayModeToken();
-            if (token == null) {
-                return;
-            }
-            mFgExecutor.executeDelayed(() -> {
-                udfpsView.requestDisplayRateIfCurrent(token, UDFPS_WIND_DOWN_INTERMEDIATE_HZ);
-                mFgExecutor.executeDelayed(
-                        () -> udfpsView.unconfigureDisplayIfCurrent(token),
-                        UDFPS_WIND_DOWN_INTERMEDIATE_MS);
-            }, UDFPS_DISPLAY_MODE_LINGER_MS);
-        });
-    }
-
-    private void releaseUdfpsDisplayModeImmediately() {
-        if (mOverlay == null) {
-            return;
-        }
-        final View view = mOverlay.getTouchOverlay();
-        if (mOnFingerDown) {
-            mSkipLingerOnNextUnconfigure = true;
-            return;
-        }
-        mFgExecutor.execute(() -> unconfigureDisplay(view));
     }
 
     /**
@@ -1452,8 +1369,6 @@ public class UdfpsController implements DozeReceiver, Dumpable {
             mDeviceEntryFaceAuthInteractor.onUdfpsSensorTouched();
         }
         mOnFingerDown = true;
-        mHalPointerDownReported = true;
-        mAuthOutcomeReached = false;
         mFingerprintManager.onPointerDown(requestId, mSensorProps.sensorId, pointerId, x, y,
                 minor, major, orientation, time, gestureStart, isAod);
 
@@ -1484,6 +1399,7 @@ public class UdfpsController implements DozeReceiver, Dumpable {
 
         final View view = mOverlay.getTouchOverlay();
         if (isOptical() && view instanceof UdfpsTouchOverlay udfpsView) {
+            mOverlay.setIlluminationRequested(true);
             if (mIgnoreRefreshRate) {
                 dispatchOnUiReady(requestId);
             } else {
@@ -1537,12 +1453,9 @@ public class UdfpsController implements DozeReceiver, Dumpable {
             mSmartPixelsFlag = false;
         }
 
-        if (mHalPointerDownReported) {
+        if (mOnFingerDown) {
             mFingerprintManager.onPointerUp(requestId, mSensorProps.sensorId, pointerId, x,
                     y, minor, major, orientation, time, gestureStart, isAod);
-            mHalPointerDownReported = false;
-        }
-        if (mOnFingerDown) {
             if (isOptical()) {
                 for (Callback cb : mCallbacks) {
                     cb.onFingerUp();
@@ -1561,10 +1474,7 @@ public class UdfpsController implements DozeReceiver, Dumpable {
             }
         }
 
-        if (!mAuthOutcomeReached) {
-            mSkipLingerOnNextUnconfigure = true;
-        }
-        scheduleUnconfigureDisplay(view);
+        unconfigureDisplay(view);
         cancelAodSendFingerUpAction();
         if (view instanceof com.android.systemui.biometrics.ui.view.UdfpsTouchOverlay udfpsTouchOverlay) {
             udfpsTouchOverlay.setAodInterruptActive(false);
