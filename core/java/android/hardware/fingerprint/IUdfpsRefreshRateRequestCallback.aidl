@@ -49,6 +49,5 @@ oneway interface IUdfpsRefreshRateRequestCallback {
      * @param isPossible If authentication is possible on particualr screen
      */
     void onAuthenticationPossible(int displayId, boolean isPossible);
-
-    void onRequestRate(int displayId, float refreshRate);
 }
+

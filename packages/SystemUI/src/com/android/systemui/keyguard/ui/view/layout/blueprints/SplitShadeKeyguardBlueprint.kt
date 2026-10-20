@@ -67,8 +67,6 @@ constructor(
     defaultSettingsPopupMenuSection: DefaultSettingsPopupMenuSection,
     @Named(KeyguardSectionsModule.KEYGUARD_BATTERY_CHARGING_SECTION)
     batteryChargingPopupMenuSection: Optional<KeyguardSection>,
-    @Named(KeyguardSectionsModule.KEYGUARD_NOW_PLAYING_SECTION)
-    nowPlayingSection: Optional<KeyguardSection>,
     defaultStatusBarSection: DefaultStatusBarSection,
     splitShadeNotificationStackScrollLayoutSection: SplitShadeNotificationStackScrollLayoutSection,
     splitShadeGuidelines: SplitShadeGuidelines,
@@ -98,7 +96,6 @@ constructor(
             defaultAmbientIndicationAreaSection.getOrNull(),
             defaultSettingsPopupMenuSection,
             batteryChargingPopupMenuSection.getOrNull(),
-            nowPlayingSection.getOrNull(),
             defaultStatusBarSection,
             splitShadeNotificationStackScrollLayoutSection,
             splitShadeGuidelines,

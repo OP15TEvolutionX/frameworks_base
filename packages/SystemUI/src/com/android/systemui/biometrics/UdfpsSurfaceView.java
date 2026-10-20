@@ -113,9 +113,6 @@ public class UdfpsSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             return;
         }
 
-        mAwaitingSurfaceToStartIllumination = false;
-        mOnDisplayConfigured = null;
-
         if (mHasValidSurface) {
             doIlluminate(onDisplayConfigured);
         } else {
