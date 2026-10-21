@@ -46,6 +46,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.Trace;
 import android.os.UserHandle;
+import android.provider.SearchIndexablesContract;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
@@ -66,6 +67,12 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 final class ResolveIntentHelper {
+    private static final String GOOGLE_SETTINGS_INTELLIGENCE_PACKAGE =
+            "com.google.android.settings.intelligence";
+    private static final String AOSP_SETTINGS_INTELLIGENCE_PACKAGE =
+            "com.android.settings.intelligence";
+    private static final String OPPO_AI_UNIT_PACKAGE = "com.oplus.aiunit";
+
     @NonNull
     private final Context mContext;
     @NonNull
@@ -518,6 +525,10 @@ final class ResolveIntentHelper {
             if (resolveInfos == null) {
                 return Collections.emptyList();
             }
+            if (isSettingsIntelligenceSearchQuery(computer, intent, callingUid)) {
+                resolveInfos.removeIf(resolveInfo -> resolveInfo.providerInfo != null
+                        && OPPO_AI_UNIT_PACKAGE.equals(resolveInfo.providerInfo.packageName));
+            }
             return applyPostContentProviderResolutionFilter(computer, resolveInfos,
                     instantAppPkgName, userId, callingUid);
         }
@@ -532,6 +543,19 @@ final class ResolveIntentHelper {
                     instantAppPkgName, userId, callingUid);
         }
         return Collections.emptyList();
+    }
+
+    private boolean isSettingsIntelligenceSearchQuery(@NonNull Computer computer,
+            @NonNull Intent intent, int callingUid) {
+        if (!SearchIndexablesContract.PROVIDER_INTERFACE.equals(intent.getAction())) {
+            return false;
+        }
+        final String[] callingPackages = computer.getPackagesForUid(callingUid);
+        if (callingPackages == null) {
+            return false;
+        }
+        return ArrayUtils.contains(callingPackages, GOOGLE_SETTINGS_INTELLIGENCE_PACKAGE)
+                || ArrayUtils.contains(callingPackages, AOSP_SETTINGS_INTELLIGENCE_PACKAGE);
     }
 
     private List<ResolveInfo> applyPostContentProviderResolutionFilter(@NonNull Computer computer,
