@@ -74,16 +74,6 @@ abstract class UserAwareSettingsRepository(
             .distinctUntilChanged()
             .flowOn(backgroundDispatcher)
 
-    fun stringSetting(name: String): Flow<String?> =
-        userRepository.selectedUserInfo
-            .flatMapLatest { userInfo ->
-                settingObserver(name, userInfo.id) {
-                    userSettings.getStringForUser(name, userInfo.id)
-                }
-            }
-            .distinctUntilChanged()
-            .flowOn(backgroundDispatcher)
-
     private fun <T> settingObserver(name: String, userId: Int, settingsReader: () -> T): Flow<T> {
         return userSettings
             .observerFlow(userId, name)
