@@ -484,6 +484,28 @@ public class CameraMetadataNative implements Parcelable {
     public <T> T get(Key<T> key) {
         Objects.requireNonNull(key, "key must not be null");
 
+        // The OnePlus camera HAL publishes com.oplus.supported.cameraid.type as TYPE_BYTE,
+        // while the Oplus camera SDK reads it as int[]; widen the real value instead of
+        // failing the marshal. Fall back to the camera id only when the HAL omits the tag.
+        if (key.getType() == int[].class
+                && "com.oplus.supported.cameraid.type".equals(key.getName())) {
+            byte[] types = null;
+            try {
+                types = getBase(new Key<byte[]>(key.getName(), byte[].class));
+            } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                // Tag not declared as a byte array by this HAL.
+            }
+            if (types != null && types.length > 0) {
+                int[] widened = new int[types.length];
+                for (int i = 0; i < types.length; i++) {
+                    widened[i] = types[i] & 0xff;
+                }
+                return (T) widened;
+            }
+            int camId = mCameraId >= 0 ? mCameraId : 0;
+            return (T) new int[]{camId};
+        }
+
         // Check if key has been overridden to use a wrapper class on the java side.
         GetCommand g = sGetCommandMap.get(key);
         if (g != null) {
