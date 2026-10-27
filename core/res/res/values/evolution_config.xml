@@ -62,4 +62,11 @@
 
     <!-- -1 means use same as config_screenBrightnessDoze -->
     <integer name="config_screenBrightnessPulse">-1</integer>
+
+    <!-- Package signature overrides for system packages, reported only to the given caller.
+         Lets a re-signed system app present its original OEM certificate to an app that
+         pins it (e.g. Google Photos trusting an OEM camera's processing-media provider).
+         Signature checks inside the system are unaffected.
+         Format per entry: "package|callerPackage|hexEncodedDerCertificate" -->
+    <string-array name="config_packageSignatureOverrides" translatable="false" />
 </resources>

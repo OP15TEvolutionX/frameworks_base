@@ -110,4 +110,7 @@
 
     <!-- Cycle through ringer modes -->
     <java-symbol type="string" name="volume_dialog_ringer_guidance_normal" />
+
+    <!-- Package signature overrides -->
+    <java-symbol type="array" name="config_packageSignatureOverrides" />
 </resources>

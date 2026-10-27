@@ -100,6 +100,7 @@ import android.content.pm.SharedLibraryInfo;
 import android.content.pm.Signature;
 import android.content.pm.SigningDetails;
 import android.content.pm.SigningInfo;
+import android.content.res.Resources;
 import android.content.pm.UserInfo;
 import android.app.ActivityManagerInternal;
 import android.content.pm.UserPackage;
@@ -1739,6 +1740,52 @@ public class ComputerEngine implements Computer {
         return true;
     }
 
+    // package -> (caller package -> certificate), from config_packageSignatureOverrides.
+    private static volatile ArrayMap<String, ArrayMap<String, Signature>> sSignatureOverrides;
+
+    private static ArrayMap<String, ArrayMap<String, Signature>> getSignatureOverrides() {
+        ArrayMap<String, ArrayMap<String, Signature>> overrides = sSignatureOverrides;
+        if (overrides != null) {
+            return overrides;
+        }
+        overrides = new ArrayMap<>();
+        String[] entries = Resources.getSystem().getStringArray(
+                com.android.internal.R.array.config_packageSignatureOverrides);
+        for (String entry : entries) {
+            String[] parts = entry.trim().split("\\|");
+            if (parts.length != 3) {
+                Slog.w(TAG, "Ignoring malformed signature override: " + entry);
+                continue;
+            }
+            try {
+                overrides.computeIfAbsent(parts[0].trim(), k -> new ArrayMap<>())
+                        .put(parts[1].trim(), new Signature(parts[2].trim()));
+            } catch (IllegalArgumentException e) {
+                Slog.w(TAG, "Ignoring signature override with bad certificate: " + parts[0]);
+            }
+        }
+        sSignatureOverrides = overrides;
+        return overrides;
+    }
+
+    private Signature getSignatureOverride(String packageName, int callingUid) {
+        ArrayMap<String, Signature> byCaller = getSignatureOverrides().get(packageName);
+        if (byCaller == null) {
+            return null;
+        }
+        String[] callingPackages = getPackagesForUid(callingUid);
+        if (callingPackages == null) {
+            return null;
+        }
+        for (String callingPackage : callingPackages) {
+            Signature signature = byCaller.get(callingPackage);
+            if (signature != null) {
+                return signature;
+            }
+        }
+        return null;
+    }
+
     private static Optional<Signature> generateFakeSignature(AndroidPackage p) {
         if (!isMicrogSigned(p)) {
             return Optional.empty();
@@ -1842,6 +1889,27 @@ public class ComputerEngine implements Computer {
                     Slog.e(TAG, "Caught an exception when creating signing keys: ", e);
                 }
             });
+
+            if (ps.isSystem()) {
+                Signature override = getSignatureOverride(p.getPackageName(), callingUid);
+                if (override != null) {
+                    Signature[] signatures = new Signature[]{override};
+                    try {
+                        packageInfo.signingInfo = new SigningInfo(
+                                new SigningDetails(
+                                        signatures,
+                                        SigningDetails.SignatureSchemeVersion.SIGNING_BLOCK_V3,
+                                        SigningDetails.toSigningKeys(signatures),
+                                        null
+                                )
+                        );
+                        packageInfo.signatures = signatures;
+                    } catch (CertificateException e) {
+                        Slog.e(TAG, "Unable to apply signature override for "
+                                + p.getPackageName(), e);
+                    }
+                }
+            }
 
             if ("android".equals(p.getPackageName())) {
                 try {
