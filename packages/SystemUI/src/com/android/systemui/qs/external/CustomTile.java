@@ -34,6 +34,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.service.quicksettings.IQSTileService;
 import android.service.quicksettings.Tile;
@@ -94,6 +95,11 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     private final IQSTileService mService;
     private final TileServiceManager mServiceManager;
     private final int mUser;
+    /** Broadcast sent by the icon zone, for system tiles that ask for two click zones. */
+    private static final String META_SECONDARY_CLICK_ACTION =
+            "org.evolution.qs.SECONDARY_CLICK_ACTION";
+    @Nullable
+    private String mSecondaryClickAction;
     private final CustomTileStatePersister mCustomTileStatePersister;
     private final DisplayTracker mDisplayTracker;
     @Nullable
@@ -194,7 +200,9 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
                 flags |= PackageManager.MATCH_DISABLED_COMPONENTS;
             }
 
-            ServiceInfo info = pm.getServiceInfo(mComponent, flags);
+            ServiceInfo info = pm.getServiceInfo(mComponent, flags | PackageManager.GET_META_DATA);
+            mSecondaryClickAction = isSystemApp(pm) && info.metaData != null
+                    ? info.metaData.getString(META_SECONDARY_CLICK_ACTION) : null;
             int icon = info.icon != 0 ? info.icon
                     : info.applicationInfo.icon;
             // Update the icon if its not set or is the default icon.
@@ -454,7 +462,18 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     }
 
     @Override
+    protected void handleSecondaryClick(@Nullable Expandable expandable) {
+        if (mSecondaryClickAction == null) {
+            super.handleSecondaryClick(expandable);
+        } else if (mTile.getState() != Tile.STATE_UNAVAILABLE) {
+            mContext.sendBroadcastAsUser(new Intent(mSecondaryClickAction)
+                    .setPackage(mComponent.getPackageName()), UserHandle.of(mUser));
+        }
+    }
+
+    @Override
     protected void handleUpdateState(State state, Object arg) {
+        state.handlesSecondaryClick = mSecondaryClickAction != null;
         int tileState = mTile.getState();
         if (mServiceManager.hasPendingBind()) {
             tileState = Tile.STATE_UNAVAILABLE;
