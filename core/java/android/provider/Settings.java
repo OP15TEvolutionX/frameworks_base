@@ -8484,6 +8484,12 @@ public final class Settings {
          */
         public static final String SENSOR_BLOCKED_PACKAGES = "sensor_blocked_packages";
 
+        /**
+         * Semicolon-separated list of packages that cannot see other user apps.
+         * @hide
+         */
+        public static final String HIDE_APPS_PACKAGES = "hide_apps_packages";
+
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoSecureSettingsLocked.
 

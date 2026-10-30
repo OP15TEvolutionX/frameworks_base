@@ -492,6 +492,12 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
             if (targetAppId < Process.FIRST_APPLICATION_UID) {
                 return false;
             }
+            // Checked ahead of mShouldFilterCache so list changes need no cache rebuild.
+            if (HideAppsController.shouldHide(callingUid, callingSetting, targetPkgSetting)
+                    && !isImplicitlyQueryable(callingUid,
+                            UserHandle.getUid(userId, targetAppId))) {
+                return true;
+            }
             if (Process.isSdkSandboxUid(callingAppId)) {
                 final int targetUid = UserHandle.getUid(userId, targetAppId);
                 // we only allow sdk sandbox processes access to forcequeryable packages or
