@@ -404,6 +404,12 @@ constructor(
                 }
             }
 
+            override fun onStartedGoingToSleep(why: Int) {
+                // The keyguard is shown only after the screen off animation, so
+                // minute ticks missed in an app must be applied before AOD draws.
+                refreshTime()
+            }
+
             private fun refreshTime() {
                 clock?.smallClock?.events?.onTimeTick()
                 clock?.largeClock?.events?.onTimeTick()
