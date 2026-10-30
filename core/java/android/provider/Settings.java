@@ -15914,6 +15914,18 @@ public final class Settings {
      * explicitly modify through the system UI or specialized APIs for those values.
      */
     public static final class Global extends NameValueTable {
+        /**
+         * Semicolon-separated "kind:package/class" Intent Firewall blocks from Component Manager.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_IFW_RULES = "component_manager_ifw_rules";
+
+        /**
+         * Newline-separated PackageManager changes made by Component Manager.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_PM_LOG = "component_manager_pm_log";
+
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoGlobalSettingsLocked.
 

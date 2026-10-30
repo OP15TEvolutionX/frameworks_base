@@ -23,12 +23,16 @@ import android.annotation.NonNull;
 import android.annotation.TestApi;
 import android.app.AppGlobals;
 import android.content.ComponentName;
+import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManagerInternal;
+import android.database.ContentObserver;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Environment;
 import android.os.FileObserver;
@@ -37,8 +41,11 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.PatternMatcher;
 import android.os.RemoteException;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
+import android.util.AtomicFile;
 import android.util.Slog;
 import android.util.Xml;
 
@@ -56,7 +63,9 @@ import org.xmlpull.v1.XmlPullParserException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -67,6 +76,7 @@ public class IntentFirewall {
 
     // e.g. /data/system/ifw or /data/secure/system/ifw
     private static final File RULES_DIR = new File(Environment.getDataSystemDirectory(), "ifw");
+    private static final String COMPONENT_MANAGER_RULES_FILE = "componentmanager.xml";
 
     private static final int LOG_PACKAGES_MAX_LENGTH = 150;
     private static final int LOG_PACKAGES_SUFFICIENT_LENGTH = 125;
@@ -166,6 +176,67 @@ public class IntentFirewall {
 
         mObserver = new RuleObserver(rulesDir);
         mObserver.startWatching();
+    }
+
+    /** Mirrors Component Manager's setting into a rules file once settings are available. */
+    public void systemReady(Context context) {
+        final ContentResolver resolver = context.getContentResolver();
+        ContentObserver observer = new ContentObserver(mHandler) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                updateComponentManagerRules(resolver);
+            }
+        };
+        resolver.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.COMPONENT_MANAGER_IFW_RULES),
+                false, observer);
+        updateComponentManagerRules(resolver);
+    }
+
+    private static void updateComponentManagerRules(ContentResolver resolver) {
+        String raw = Settings.Global.getString(resolver,
+                Settings.Global.COMPONENT_MANAGER_IFW_RULES);
+        File file = new File(getRulesDir(), COMPONENT_MANAGER_RULES_FILE);
+        if (TextUtils.isEmpty(raw)) {
+            file.delete();
+            return;
+        }
+        StringBuilder[] sections = {new StringBuilder(), new StringBuilder(), new StringBuilder()};
+        for (String entry : raw.split(";")) {
+            int separator = entry.indexOf(':');
+            if (separator <= 0) {
+                continue;
+            }
+            String kind = entry.substring(0, separator);
+            String component = entry.substring(separator + 1);
+            // The value is writable through the shell, so never let it shape the XML.
+            if (!component.matches("[\\w.$-]+/[\\w.$-]+")) {
+                Slog.w(TAG, "Ignoring invalid component rule: " + component);
+                continue;
+            }
+            int index = "1".equals(kind) ? 1 : "2".equals(kind) ? 2 : 0;
+            sections[index].append("    <component-filter name=\"").append(component)
+                    .append("\" />\n");
+        }
+        String[] tags = {"activity", "service", "broadcast"};
+        StringBuilder xml = new StringBuilder("<rules>\n");
+        for (int i = 0; i < tags.length; i++) {
+            if (sections[i].length() > 0) {
+                xml.append("  <").append(tags[i]).append(" block=\"true\" log=\"false\">\n")
+                        .append(sections[i]).append("  </").append(tags[i]).append(">\n");
+            }
+        }
+        xml.append("</rules>\n");
+        AtomicFile atomicFile = new AtomicFile(file);
+        FileOutputStream out = null;
+        try {
+            out = atomicFile.startWrite();
+            out.write(xml.toString().getBytes(StandardCharsets.UTF_8));
+            atomicFile.finishWrite(out);
+        } catch (IOException e) {
+            Slog.e(TAG, "Failed to write component manager rules", e);
+            atomicFile.failWrite(out);
+        }
     }
 
     /**

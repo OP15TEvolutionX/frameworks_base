@@ -9717,6 +9717,7 @@ public class ActivityManagerService extends IActivityManager.Stub
      * Ready. Set. Go!
      */
     public void systemReady(final Runnable goingCallback, @NonNull TimingsTraceAndSlog t) {
+        mIntentFirewall.systemReady(mContext);
         t.traceBegin("PhaseActivityManagerReady");
         mSystemServiceManager.preSystemReady();
         synchronized(this) {
