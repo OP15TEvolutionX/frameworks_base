@@ -31,6 +31,7 @@ import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.ViewTreeObserver;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -82,6 +83,14 @@ public class NotificationBackgroundView extends View implements Dumpable,
     private BackgroundBlurDrawable mBackgroundBlurDrawable;
     @VisibleForTesting
     protected View.OnAttachStateChangeListener mOnAttachStateChangeListener;
+    // Blur regions are composited from the drawable's own alpha only, so the alpha of the stack
+    // and its ancestors (e.g. while the keyguard fades in or out) has to be folded in by hand.
+    private final ViewTreeObserver.OnPreDrawListener mBlurAlphaSync = () -> {
+        syncBlurAlpha();
+        return true;
+    };
+    private boolean mBlurAlphaSyncRegistered;
+    private float mBlurContentAlpha = 1f;
 
     // True only if the dismiss button is visible.
     private boolean mDrawDismissButtonCutout = false;
@@ -366,6 +375,7 @@ public class NotificationBackgroundView extends View implements Dumpable,
                                 mBackgroundBlurDrawable.setColor(mNormalColor);
 
                                 updateBackgroundRadii();
+                                setBlurAlphaSyncEnabled(true);
                                 invalidate();
                             }
                             NotificationBackgroundView.this.removeOnAttachStateChangeListener(this);
@@ -389,6 +399,7 @@ public class NotificationBackgroundView extends View implements Dumpable,
                 mBackgroundBlurDrawable.setCallback(null);
             }
             mBackgroundBlurDrawable = null;
+            setBlurAlphaSyncEnabled(false);
         }
     }
 
@@ -507,9 +518,57 @@ public class NotificationBackgroundView extends View implements Dumpable,
             return;
         }
         mBackground.setAlpha(drawableAlpha);
-        if (mBackgroundBlurDrawable != null) {
-            mBackgroundBlurDrawable.setAlpha(drawableAlpha);
+        syncBlurAlpha();
+    }
+
+    private void syncBlurAlpha() {
+        if (mBackgroundBlurDrawable == null || mExpandAnimationRunning) {
+            return;
         }
+        // A hidden view is not drawn, but its last blur region would still be composited.
+        float alpha = getActualHeight() > 0 ? mBlurContentAlpha : 0f;
+        for (View v = this; v != null && alpha > 0f;
+                v = v.getParent() instanceof View ? (View) v.getParent() : null) {
+            alpha *= v.getVisibility() == VISIBLE ? v.getAlpha() * v.getTransitionAlpha() : 0f;
+        }
+        int blurAlpha = Math.round(mDrawableAlpha * Math.max(0f, Math.min(1f, alpha)));
+        if (mBackgroundBlurDrawable.getAlpha() != blurAlpha) {
+            mBackgroundBlurDrawable.setAlpha(blurAlpha);
+        }
+    }
+
+    /** Sets the alpha of the content drawn over this background, which the blur follows. */
+    public void setBlurContentAlpha(float contentAlpha) {
+        if (mBlurContentAlpha != contentAlpha) {
+            mBlurContentAlpha = contentAlpha;
+            syncBlurAlpha();
+        }
+    }
+
+    private void setBlurAlphaSyncEnabled(boolean enabled) {
+        enabled &= mBackgroundBlurDrawable != null && isAttachedToWindow();
+        if (enabled == mBlurAlphaSyncRegistered) {
+            return;
+        }
+        mBlurAlphaSyncRegistered = enabled;
+        if (enabled) {
+            getViewTreeObserver().addOnPreDrawListener(mBlurAlphaSync);
+            syncBlurAlpha();
+        } else {
+            getViewTreeObserver().removeOnPreDrawListener(mBlurAlphaSync);
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        setBlurAlphaSyncEnabled(true);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        setBlurAlphaSyncEnabled(false);
+        super.onDetachedFromWindow();
     }
 
     /**
