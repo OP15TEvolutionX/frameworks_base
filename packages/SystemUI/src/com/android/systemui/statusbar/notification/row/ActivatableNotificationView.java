@@ -707,10 +707,6 @@ public abstract class ActivatableNotificationView extends ExpandableOutlineView 
 
     private void setContentAlpha(float contentAlpha) {
         setAlphaAndLayerType(getContentView(), contentAlpha);
-        // The appear animation clips the background to an outline, which blur regions ignore.
-        if (mBackgroundNormal != null) {
-            mBackgroundNormal.setBlurContentAlpha(contentAlpha);
-        }
         // After updating the current view, reset all views.
         if (contentAlpha == 1f) {
             resetAllContentAlphas();
