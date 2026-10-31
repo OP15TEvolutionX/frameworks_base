@@ -4538,6 +4538,7 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
         co.onChange(true);
 
         mAppsFilter.onSystemReady(LocalServices.getService(PackageManagerInternal.class));
+        HideAppsController.start(mContext);
 
         // Disable any carrier apps. We do this very early in boot to prevent the apps from being
         // disabled after already being started.
