@@ -219,6 +219,7 @@ import com.android.server.accessibility.magnification.MagnificationController;
 import com.android.server.accessibility.magnification.MagnificationProcessor;
 import com.android.server.accessibility.magnification.MagnificationScaleProvider;
 import com.android.server.inputmethod.InputMethodManagerInternal;
+import com.android.server.pm.HideAppsController;
 import com.android.server.pm.UserManagerInternal;
 import com.android.server.policy.WindowManagerPolicy;
 import com.android.server.statusbar.StatusBarManagerInternal;
@@ -1863,6 +1864,12 @@ public class AccessibilityManagerService extends IAccessibilityManager.Stub
             for (int i = 0; i < serviceCount; ++i) {
                 final AccessibilityServiceConnection service = services.get(i);
                 if (AxSandboxService.get().isPackageSandboxed(service.getComponentName().getPackageName(), userState.mUserId)) {
+                    continue;
+                }
+                if (HideAppsController.isHiddenFrom(
+                        LocalServices.getService(PackageManagerInternal.class),
+                        Binder.getCallingUid(), service.getComponentName().getPackageName(),
+                        resolvedUserId)) {
                     continue;
                 }
                 if ((service.mFeedbackType & feedbackType) != 0
