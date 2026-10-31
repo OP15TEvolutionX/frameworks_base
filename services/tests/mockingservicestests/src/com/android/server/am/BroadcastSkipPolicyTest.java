@@ -56,6 +56,8 @@ public class BroadcastSkipPolicyTest extends BaseBroadcastQueueTest {
 
         doReturn(true).when(mIntentFirewall).checkBroadcast(any(Intent.class),
                 anyInt(), anyInt(), nullable(String.class), anyInt());
+        doReturn(true).when(mIntentFirewall).checkBroadcast(any(android.content.ComponentName.class),
+                any(Intent.class), anyInt(), anyInt(), nullable(String.class), anyInt());
 
         doReturn(mIPackageManager).when(AppGlobals::getPackageManager);
         doReturn(true).when(mIPackageManager).isPackageAvailable(anyString(), anyInt());

@@ -15911,6 +15911,39 @@ public final class Settings {
      * explicitly modify through the system UI or specialized APIs for those values.
      */
     public static final class Global extends NameValueTable {
+        /**
+         * Semicolon-separated "kind:package/class" Intent Firewall blocks from Component Manager.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_IFW_RULES = "component_manager_ifw_rules";
+
+        /**
+         * Newline-separated PackageManager changes made by Component Manager.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_PM_LOG = "component_manager_pm_log";
+
+        /**
+         * Semicolon-separated "user:package" entries stopped after the screen locks.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_STOP_PACKAGES =
+                "component_manager_stop_packages";
+
+        /**
+         * Semicolon-separated "user:package" entries whose alarms and jobs are blocked in the background.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_ALARM_PACKAGES =
+                "component_manager_alarm_packages";
+
+        /**
+         * Seconds to wait after the screen turns off before stopping packages.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_STOP_DELAY_SEC =
+                "component_manager_stop_delay_sec";
+
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoGlobalSettingsLocked.
 

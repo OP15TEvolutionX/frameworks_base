@@ -90,6 +90,7 @@ import com.android.internal.os.BackgroundThread;
 import com.android.internal.os.TimeoutRecord;
 import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.FrameworkStatsLog;
+import com.android.server.firewall.IntentFirewall;
 import com.android.server.LocalManagerRegistry;
 import com.android.server.LocalServices;
 import com.android.server.pm.UserManagerInternal;
@@ -275,6 +276,10 @@ public class ContentProviderHelper {
 
             if (providerRunning) {
                 cpi = cpr.mProviderInfo;
+                if (IntentFirewall.isAssociatedLaunchBlocked(cpi.packageName,
+                        cpi.applicationInfo.uid, callingUid, Binder.getCallingPid())) {
+                    return null;
+                }
 
 
                 if (r != null && cpr.canRunHere(r)) {
@@ -390,6 +395,14 @@ public class ContentProviderHelper {
                 } catch (RemoteException ex) {
                 }
                 if (cpi == null) {
+                    return null;
+                }
+                // Never published, so a lookup would otherwise wait for the provider to time out.
+                if (IntentFirewall.isProviderBlocked(cpi.packageName, cpi.name)) {
+                    return null;
+                }
+                if (IntentFirewall.isAssociatedLaunchBlocked(cpi.packageName,
+                        cpi.applicationInfo.uid, callingUid, Binder.getCallingPid())) {
                     return null;
                 }
                 // If the provider is a singleton AND
@@ -1305,6 +1318,14 @@ public class ContentProviderHelper {
             if (isInstantApp && !splitInstalled) {
                 // For instant app, allow provider that is defined in the provided split apk.
                 // Skipping it if the split apk is not installed.
+                providers.remove(i);
+                numProviders--;
+                i--;
+                continue;
+            }
+
+            if (IntentFirewall.isProviderBlocked(cpi.packageName, cpi.name)) {
+                // Never created, so its code doesn't run when the process starts.
                 providers.remove(i);
                 numProviders--;
                 i--;

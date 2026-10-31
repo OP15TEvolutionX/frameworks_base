@@ -88,6 +88,7 @@ import android.content.pm.PackageManagerInternal;
 import android.content.pm.ParceledListSlice;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
+import android.database.ContentObserver;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
@@ -110,6 +111,8 @@ import android.os.Trace;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.provider.DeviceConfig;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
@@ -407,6 +410,7 @@ public class JobSchedulerService extends com.android.server.SystemService
     DeviceIdleInternal mLocalDeviceIdleController;
     @VisibleForTesting
     AppStateTrackerImpl mAppStateTracker;
+    private volatile ArraySet<String> mBlockedPackages = new ArraySet<>();
     private final AppStandbyInternal mAppStandbyInternal;
     private final BatteryStatsInternal mBatteryStatsInternal;
 
@@ -3106,6 +3110,15 @@ public class JobSchedulerService extends com.android.server.SystemService
                 Slog.e(TAG, "Couldn't wait on job store loading latch");
             }
         } else if (PHASE_SYSTEM_SERVICES_READY == phase) {
+            getContext().getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(Settings.Global.COMPONENT_MANAGER_ALARM_PACKAGES),
+                    false, new ContentObserver(mHandler) {
+                        @Override
+                        public void onChange(boolean selfChange, Uri uri) {
+                            loadBlockedPackages();
+                        }
+                    });
+            loadBlockedPackages();
             mConstantsObserver.start();
             for (int i = mControllers.size() - 1; i >= 0; --i) {
                 mControllers.get(i).onSystemServicesReady();
@@ -4374,7 +4387,31 @@ public class JobSchedulerService extends com.android.server.SystemService
     }
 
     @GuardedBy("mLock")
+    private void loadBlockedPackages() {
+        final ArraySet<String> packages = new ArraySet<>();
+        final String raw = Settings.Global.getString(getContext().getContentResolver(),
+                Settings.Global.COMPONENT_MANAGER_ALARM_PACKAGES);
+        if (!TextUtils.isEmpty(raw)) {
+            for (String entry : raw.split(";")) {
+                packages.add(entry);
+            }
+        }
+        mBlockedPackages = packages;
+    }
+
+    /** Component Manager's autostart block holds jobs back unless the app is in use. */
+    private boolean isBlockedJob(JobStatus job) {
+        final ArraySet<String> packages = mBlockedPackages;
+        return !packages.isEmpty()
+                && packages.contains(job.getSourceUserId() + ":" + job.getSourcePackageName())
+                && mActivityManagerInternal.getUidProcessState(job.getSourceUid())
+                        > ActivityManager.PROCESS_STATE_FOREGROUND_SERVICE;
+    }
+
     boolean isReadyToBeExecutedLocked(JobStatus job, boolean rejectActive) {
+        if (isBlockedJob(job)) {
+            return false;
+        }
         final boolean jobReady = job.isReady() || evaluateControllerStatesLocked(job);
 
         if (DEBUG) {

@@ -128,7 +128,7 @@ public class BroadcastSkipPolicy {
             return "Association not allowed: broadcasting "
                     + broadcastDescription(r, component);
         }
-        if (!mService.mIntentFirewall.checkBroadcast(r.intent, r.callingUid,
+        if (!mService.mIntentFirewall.checkBroadcast(component, r.intent, r.callingUid,
                 r.callingPid, r.resolvedType, receiverUid)) {
             return "Firewall blocked: broadcasting "
                     + broadcastDescription(r, component);
