@@ -4343,7 +4343,8 @@ public class AlarmManagerService extends SystemService {
         return !packages.isEmpty()
                 && packages.contains(UserHandle.getUserId(alarm.creatorUid) + ":"
                         + alarm.sourcePackage)
-                && !mAppStateTracker.isUidActive(alarm.creatorUid);
+                && mActivityManagerInternal.getUidProcessState(alarm.creatorUid)
+                        > ActivityManager.PROCESS_STATE_FOREGROUND_SERVICE;
     }
 
     int triggerAlarmsLocked(ArrayList<Alarm> triggerList, final long nowELAPSED) {

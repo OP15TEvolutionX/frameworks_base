@@ -15902,7 +15902,7 @@ public final class Settings {
                 "component_manager_stop_packages";
 
         /**
-         * Semicolon-separated "user:package" entries whose alarms are dropped in the background.
+         * Semicolon-separated "user:package" entries whose alarms and jobs are blocked in the background.
          * @hide
          */
         public static final String COMPONENT_MANAGER_ALARM_PACKAGES =
