@@ -8490,6 +8490,12 @@ public final class Settings {
          */
         public static final String HIDE_APPS_PACKAGES = "hide_apps_packages";
 
+        /**
+         * Semicolon-separated list of packages that also cannot see most system apps.
+         * @hide
+         */
+        public static final String HIDE_APPS_STRICT_PACKAGES = "hide_apps_strict_packages";
+
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoSecureSettingsLocked.
 
@@ -15014,50 +15020,6 @@ public final class Settings {
         public static final String CLOCK_TEXT_OPACITY = "clock_text_opacity";
 
         /**
-         * Idle Manager enabled state.
-         * @hide
-         */
-        public static final String IDLE_MANAGER = "idle_manager";
-
-        /**
-         * @hide
-         */
-        public static final String IDLE_MANAGER_APPS = "idle_manager_apps";
-
-        /**
-         * Global Idle Manager timeout policy.
-         * @hide
-         */
-        public static final String IDLE_MANAGER_POLICY = "idle_manager_policy";
-
-        /**
-         * @hide
-         */
-        public static final String IDLE_MANAGER_TIMEOUT = "idle_manager_timeout";
-
-        /**
-         * @hide
-         */
-        public static final String IDLE_MANAGER_KILL_STATS = "idle_manager_kill_stats";
-
-        /**
-         * @hide
-         */
-        public static final String IDLE_MANAGER_RESTORE_PENDING = "idle_manager_restore_pending";
-
-        /**
-         * Original and applied standby buckets for Idle Manager recovery.
-         * @hide
-         */
-        public static final String IDLE_MANAGER_BUCKET_STATES = "idle_manager_bucket_states";
-
-        /**
-         * Original RUN_ANY_IN_BACKGROUND modes for Idle Manager recovery.
-         * @hide
-         */
-        public static final String IDLE_MANAGER_APP_OP_STATES = "idle_manager_app_op_states";
-
-        /**
          * @hide
          */
         public static final String LOCK_SCREEN_CUSTOM_CLOCK_STYLE = "lock_screen_custom_clock_style";
@@ -15931,6 +15893,20 @@ public final class Settings {
          * @hide
          */
         public static final String COMPONENT_MANAGER_PM_LOG = "component_manager_pm_log";
+
+        /**
+         * Semicolon-separated "user:package" entries stopped after the screen locks.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_STOP_PACKAGES =
+                "component_manager_stop_packages";
+
+        /**
+         * Seconds to wait after the screen turns off before stopping packages.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_STOP_DELAY_SEC =
+                "component_manager_stop_delay_sec";
 
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoGlobalSettingsLocked.
