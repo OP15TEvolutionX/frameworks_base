@@ -148,6 +148,7 @@ import com.android.internal.util.FrameworkStatsLog;
 import com.android.server.UiThread;
 import com.android.server.am.ActivityManagerService.IntentCreatorToken;
 import com.android.server.am.PendingIntentRecord;
+import com.android.server.pm.HideAppsController;
 import com.android.server.pm.InstantAppResolver;
 import com.android.server.pm.PackageArchiver;
 import com.android.server.pm.UserActivitiesAllowlist;
@@ -1251,6 +1252,14 @@ class ActivityStarter {
             // We couldn't find a class that can handle the given Intent.
             // That's the end of that!
             err = ActivityManager.START_INTENT_NOT_RESOLVED;
+        }
+
+        // Only direct explicit starts: PendingIntents and chooser results stay intact.
+        if (err == ActivityManager.START_SUCCESS && aInfo != null
+                && intent.getComponent() != null && callingUid == realCallingUid
+                && HideAppsController.isHiddenFrom(mService.getPackageManagerInternalLocked(),
+                        callingUid, aInfo.packageName, mRequest.userId)) {
+            aInfo = null;
         }
 
         if (err == ActivityManager.START_SUCCESS && aInfo == null) {
