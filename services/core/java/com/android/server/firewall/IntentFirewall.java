@@ -274,6 +274,13 @@ public class IntentFirewall {
                 callerUid, callerPid, resolvedType, receivingUid);
     }
 
+    /** Implicit broadcasts carry no component, so manifest receivers pass their resolved name. */
+    public boolean checkBroadcast(ComponentName resolvedReceiver, Intent intent, int callerUid,
+            int callerPid, String resolvedType, int receivingUid) {
+        return checkIntent(mBroadcastResolver, resolvedReceiver, TYPE_BROADCAST, intent,
+                callerUid, callerPid, resolvedType, receivingUid);
+    }
+
     public boolean checkIntent(FirewallIntentResolver resolver, ComponentName resolvedComponent,
             int intentType, Intent intent, int callerUid, int callerPid, String resolvedType,
             int receivingUid) {

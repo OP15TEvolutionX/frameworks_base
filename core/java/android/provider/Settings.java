@@ -15902,6 +15902,13 @@ public final class Settings {
                 "component_manager_stop_packages";
 
         /**
+         * Semicolon-separated "user:package" entries whose alarms are dropped in the background.
+         * @hide
+         */
+        public static final String COMPONENT_MANAGER_ALARM_PACKAGES =
+                "component_manager_alarm_packages";
+
+        /**
          * Seconds to wait after the screen turns off before stopping packages.
          * @hide
          */

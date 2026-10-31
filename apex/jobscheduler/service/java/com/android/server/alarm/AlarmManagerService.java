@@ -99,6 +99,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManagerInternal;
 import android.content.pm.UserPackage;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.BatteryStatsInternal;
@@ -340,6 +341,7 @@ public class AlarmManagerService extends SystemService {
      * At boot we use SYSTEM_UI_SELF_PERMISSION to look up the definer's uid.
      */
     int mSystemUiUid;
+    private volatile ArraySet<String> mBlockedAlarmPackages = new ArraySet<>();
 
     private static boolean isTimeTickAlarm(Alarm a) {
         return a.uid == Process.SYSTEM_UID && TIME_TICK_TAG.equals(a.listenerTag);
@@ -2058,6 +2060,15 @@ public class AlarmManagerService extends SystemService {
     @Override
     public void onBootPhase(int phase) {
         if (phase == PHASE_SYSTEM_SERVICES_READY) {
+            getContext().getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(Settings.Global.COMPONENT_MANAGER_ALARM_PACKAGES),
+                    false, new ContentObserver(mHandler) {
+                        @Override
+                        public void onChange(boolean selfChange, Uri uri) {
+                            loadBlockedAlarmPackages();
+                        }
+                    });
+            loadBlockedAlarmPackages();
             synchronized (mLock) {
                 mConstants.start();
 
@@ -4314,10 +4325,35 @@ public class AlarmManagerService extends SystemService {
     private static native long getNextAlarm(long nativeData, int type);
 
     @GuardedBy("mLock")
+    private void loadBlockedAlarmPackages() {
+        final ArraySet<String> packages = new ArraySet<>();
+        final String raw = Settings.Global.getString(getContext().getContentResolver(),
+                Settings.Global.COMPONENT_MANAGER_ALARM_PACKAGES);
+        if (!TextUtils.isEmpty(raw)) {
+            for (String entry : raw.split(";")) {
+                packages.add(entry);
+            }
+        }
+        mBlockedAlarmPackages = packages;
+    }
+
+    /** Component Manager's autostart block drops alarms unless the app is in use. */
+    private boolean isBlockedAlarm(Alarm alarm) {
+        final ArraySet<String> packages = mBlockedAlarmPackages;
+        return !packages.isEmpty()
+                && packages.contains(UserHandle.getUserId(alarm.creatorUid) + ":"
+                        + alarm.sourcePackage)
+                && !mAppStateTracker.isUidActive(alarm.creatorUid);
+    }
+
     int triggerAlarmsLocked(ArrayList<Alarm> triggerList, final long nowELAPSED) {
         int wakeUps = 0;
         final ArrayList<Alarm> pendingAlarms = mAlarmStore.removePendingAlarms(nowELAPSED);
         for (final Alarm alarm : pendingAlarms) {
+            if (isBlockedAlarm(alarm)) {
+                Slog.i(TAG, "Dropping alarm blocked by Component Manager: " + alarm);
+                continue;
+            }
             if (isBackgroundRestricted(alarm)) {
                 // Alarms with FLAG_WAKE_FROM_IDLE or mPendingIdleUntil alarm are not deferred
                 if (DEBUG_BG_LIMIT) {
