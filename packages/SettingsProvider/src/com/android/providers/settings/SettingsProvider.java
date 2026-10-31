@@ -2380,7 +2380,61 @@ public class SettingsProvider extends ContentProvider {
     /**
      * Returns {@code true} if the specified secure setting should be accessible to the caller.
      */
+    private boolean isHiddenByHideApps(String name) {
+        final int callingUid = Binder.getCallingUid();
+        if (UserHandle.getAppId(callingUid) < Process.FIRST_APPLICATION_UID) {
+            return false;
+        }
+        switch (name) {
+            case Settings.Secure.HIDE_APPS_PACKAGES:
+            case Settings.Secure.HIDE_APPS_STRICT_PACKAGES:
+                return true;
+            case Settings.Secure.DEFAULT_INPUT_METHOD:
+            case Settings.Secure.ENABLED_INPUT_METHODS:
+            case Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES:
+                break;
+            default:
+                return false;
+        }
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            final int userId = UserHandle.getUserId(callingUid);
+            final UserInfo parent = mUserManager.getProfileParent(userId);
+            final int ownerId = parent != null ? parent.id : userId;
+            final String[] packages = mPackageManager.getPackagesForUid(callingUid);
+            if (packages == null) {
+                return false;
+            }
+            for (String key : new String[] {Settings.Secure.HIDE_APPS_PACKAGES,
+                    Settings.Secure.HIDE_APPS_STRICT_PACKAGES}) {
+                final String value;
+                synchronized (mLock) {
+                    final Setting setting = mSettingsRegistry.getSettingLocked(
+                            SETTINGS_TYPE_SECURE, ownerId, Context.DEVICE_ID_DEFAULT, key);
+                    value = setting != null && !setting.isNull() ? setting.getValue() : null;
+                }
+                if (value == null) {
+                    continue;
+                }
+                final List<String> restricted = Arrays.asList(value.split(";"));
+                for (String pkg : packages) {
+                    if (restricted.contains(pkg)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (RemoteException e) {
+            return false;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
     private boolean isSecureSettingAccessible(String name) {
+        if (isHiddenByHideApps(name)) {
+            return false;
+        }
         return switch (name) {
             case "bluetooth_address" ->
                 // BluetoothManagerService for some reason stores the Android's Bluetooth MAC
