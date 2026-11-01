@@ -25,6 +25,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
+import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
 import android.metrics.LogMaker;
 import android.net.Uri;
@@ -34,6 +35,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.service.quicksettings.IQSTileService;
 import android.service.quicksettings.Tile;
@@ -43,6 +45,7 @@ import android.util.Log;
 import android.view.IWindowManager;
 import android.view.WindowManagerGlobal;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.Switch;
 
 import androidx.annotation.Nullable;
@@ -52,11 +55,22 @@ import com.android.internal.jank.InteractionJankMonitor;
 import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.animation.ActivityTransitionAnimator;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.TextView;
+import android.widget.CompoundButton;
+import android.view.ViewGroup;
+import android.view.LayoutInflater;
+import com.android.systemui.animation.DialogCuj;
+import com.android.systemui.animation.DialogTransitionAnimator;
 import com.android.systemui.animation.Expandable;
+import com.android.systemui.res.R;
+import com.android.systemui.statusbar.phone.SystemUIDialog;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
 import com.android.systemui.plugins.ActivityStarter;
 import com.android.systemui.plugins.FalsingManager;
+import com.android.systemui.plugins.qs.QSTile;
 import com.android.systemui.plugins.qs.QSTile.State;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
 import com.android.systemui.qs.QSHost;
@@ -94,6 +108,20 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     private final IQSTileService mService;
     private final TileServiceManager mServiceManager;
     private final int mUser;
+    /**
+     * Provider of a system tile with two click zones: the icon toggles, the rest
+     * opens a dialog with a switch and a list. Tile state is taken from its replies.
+     */
+    private static final String META_CONTROL_AUTHORITY = "org.evolution.qs.CONTROL_AUTHORITY";
+    @Nullable
+    private String mControlAuthority;
+    /** Activity for long press, when an app has several for QS_TILE_PREFERENCES. */
+    private static final String META_PREFERENCES_ACTIVITY =
+            "org.evolution.qs.PREFERENCES_ACTIVITY";
+    @Nullable
+    private String mPreferencesActivity;
+    private final SystemUIDialog.Factory mDialogFactory;
+    private final DialogTransitionAnimator mDialogTransitionAnimator;
     private final CustomTileStatePersister mCustomTileStatePersister;
     private final DisplayTracker mDisplayTracker;
     @Nullable
@@ -136,11 +164,15 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
             TileServices tileServices,
             DisplayTracker displayTracker,
             IUriGrantsManager uriGrantsManager,
-            AxAppLockerHelper axAppLockerHelper
+            AxAppLockerHelper axAppLockerHelper,
+            SystemUIDialog.Factory dialogFactory,
+            DialogTransitionAnimator dialogTransitionAnimator
     ) {
         super(host.get(), uiEventLogger, backgroundLooper, mainHandler, falsingManager,
                 metricsLogger, statusBarStateController, activityStarter, qsLogger);
         mTileServices = tileServices;
+        mDialogFactory = dialogFactory;
+        mDialogTransitionAnimator = dialogTransitionAnimator;
         mWindowManager = WindowManagerGlobal.getWindowManagerService();
         mComponent = ComponentName.unflattenFromString(action);
         mTile = new Tile();
@@ -194,7 +226,11 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
                 flags |= PackageManager.MATCH_DISABLED_COMPONENTS;
             }
 
-            ServiceInfo info = pm.getServiceInfo(mComponent, flags);
+            ServiceInfo info = pm.getServiceInfo(mComponent, flags | PackageManager.GET_META_DATA);
+            mControlAuthority = isSystemApp(pm) && info.metaData != null
+                    ? info.metaData.getString(META_CONTROL_AUTHORITY) : null;
+            mPreferencesActivity = isSystemApp(pm) && info.metaData != null
+                    ? info.metaData.getString(META_PREFERENCES_ACTIVITY) : null;
             int icon = info.icon != 0 ? info.icon
                     : info.applicationInfo.icon;
             // Update the icon if its not set or is the default icon.
@@ -396,6 +432,9 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     public Intent getLongClickIntent() {
         Intent i = new Intent(TileService.ACTION_QS_TILE_PREFERENCES);
         i.setPackage(mComponent.getPackageName());
+        if (mPreferencesActivity != null) {
+            i.setClassName(mComponent.getPackageName(), mPreferencesActivity);
+        }
         i = resolveIntent(i);
         if (i != null) {
             i.putExtra(Intent.EXTRA_COMPONENT_NAME, mComponent);
@@ -421,6 +460,16 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
 
         if (mAxAppLockerHelper.needsAuth(mComponent.getPackageName(), mUser)) {
             mAxAppLockerHelper.promptUnlock(mComponent.getPackageName(), mUser);
+            return;
+        }
+
+        if (mControlAuthority != null) {
+            Bundle control = callControl("get", null, null);
+            if (control != null) {
+                applyControl(control);
+                mActivityStarter.postQSRunnableDismissingKeyguard(
+                        () -> showControlDialog(control, expandable));
+            }
             return;
         }
 
@@ -454,7 +503,137 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     }
 
     @Override
+    protected void handleSecondaryClick(@Nullable Expandable expandable) {
+        if (mControlAuthority == null) {
+            super.handleSecondaryClick(expandable);
+        } else if (mTile.getState() != Tile.STATE_UNAVAILABLE) {
+            Bundle control = callControl("toggle", null, null);
+            if (control == null) return;
+            applyControl(control);
+            if (control.getBoolean("needs_setup")) {
+                mActivityStarter.postStartActivityDismissingKeyguard(getLongClickIntent(), 0);
+            }
+        }
+    }
+
+    @Nullable
+    private Bundle callControl(String method, @Nullable String arg, @Nullable Bundle extras) {
+        try {
+            return mUserContext.getContentResolver().call(
+                    mControlAuthority, method, arg, extras);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Control call failed", e);
+            return null;
+        }
+    }
+
+    private void applyControl(Bundle control) {
+        boolean enabled = control.getBoolean("enabled");
+        mTile.setState(enabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
+        mTile.setSubtitle(enabled ? control.getString("active") : null);
+        refreshState();
+    }
+
+    /** Calls the provider off the main thread and updates the tile with the reply. */
+    private void sendControl(String method, @Nullable String arg, @Nullable Bundle extras) {
+        mHandler.post(() -> {
+            Bundle reply = callControl(method, arg, extras);
+            if (reply != null) applyControl(reply);
+        });
+    }
+
+    private void showControlDialog(Bundle control, @Nullable Expandable expandable) {
+        SystemUIDialog dialog = mDialogFactory.create(new SystemUIDialog.Delegate() {
+            @Override
+            public SystemUIDialog createDialog() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void onCreate(SystemUIDialog dialog, Bundle savedInstanceState) {
+                dialog.setContentView(R.layout.qs_control_dialog);
+                bindControlDialog(dialog, control);
+            }
+        });
+        SystemUIDialog.setShowForAllUsers(dialog, true);
+        DialogTransitionAnimator.Controller controller = expandable == null ? null
+                : expandable.dialogTransitionController(new DialogCuj(
+                        InteractionJankMonitor.CUJ_SHADE_DIALOG_OPEN, "custom_tile_control"));
+        if (controller != null) {
+            mDialogTransitionAnimator.show(dialog, controller, false);
+        } else {
+            dialog.show();
+        }
+    }
+
+    private void bindControlDialog(SystemUIDialog dialog, Bundle control) {
+        ((TextView) dialog.requireViewById(R.id.qs_control_title)).setText(getState().label);
+        ((TextView) dialog.requireViewById(R.id.qs_control_subtitle))
+                .setText(control.getString("subtitle"));
+        ((TextView) dialog.requireViewById(R.id.qs_control_toggle_title))
+                .setText(control.getString("enable_label"));
+        dialog.requireViewById(R.id.qs_control_done).setOnClickListener(view -> dialog.dismiss());
+
+        ViewGroup list = dialog.requireViewById(R.id.qs_control_items);
+        // The rows reflect choices right away, before the provider replies.
+        final String[] active = {control.getString("active")};
+        final boolean[] enabled = {control.getBoolean("enabled")};
+
+        CompoundButton toggle = dialog.requireViewById(R.id.qs_control_toggle);
+        toggle.setChecked(enabled[0]);
+        toggle.setEnabled(control.getBoolean("can_enable"));
+        toggle.setOnCheckedChangeListener((view, checked) -> {
+            enabled[0] = checked;
+            bindControlItems(list, active[0], checked);
+            Bundle extras = new Bundle();
+            extras.putBoolean("enabled", checked);
+            sendControl("set_enabled", null, extras);
+        });
+
+        String[] items = control.getStringArray("items");
+        for (String item : items != null ? items : new String[0]) {
+            View row = LayoutInflater.from(dialog.getContext())
+                    .inflate(R.layout.qs_control_item, list, false);
+            row.setTag(item);
+            ((TextView) row.requireViewById(R.id.qs_control_item_name)).setText(item);
+            // Each row gets its own copy of the tile's icon, tinted with its text. Custom tiles
+            // only fill iconSupplier, which returns a new drawable on every call.
+            QSTile.Icon icon = getState().iconSupplier == null ? null
+                    : getState().iconSupplier.get();
+            ((ImageView) row.requireViewById(R.id.qs_control_item_icon))
+                    .setImageDrawable(icon == null ? null : icon.getDrawable(dialog.getContext()));
+            row.setOnClickListener(view -> {
+                active[0] = item;
+                bindControlItems(list, item, enabled[0]);
+                sendControl("set_item", item, null);
+            });
+            list.addView(row);
+        }
+        bindControlItems(list, active[0], enabled[0]);
+    }
+
+    // Styled like the Wi-Fi list: the active row is highlighted and shows its state.
+    private static void bindControlItems(ViewGroup list, String active, boolean enabled) {
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View row = list.getChildAt(i);
+            boolean selected = row.getTag().equals(active);
+            row.setBackgroundResource(selected ? R.drawable.settingslib_switch_bar_bg_on
+                    : R.drawable.internet_dialog_selected_effect);
+            int color = row.getContext().getColor(selected
+                    ? com.android.internal.R.color.materialColorOnPrimaryContainer
+                    : com.android.internal.R.color.materialColorOnSurface);
+            ((TextView) row.requireViewById(R.id.qs_control_item_name)).setTextColor(color);
+            TextView summary = row.requireViewById(R.id.qs_control_item_summary);
+            summary.setTextColor(color);
+            summary.setVisibility(selected && enabled ? View.VISIBLE : View.GONE);
+            ((ImageView) row.requireViewById(R.id.qs_control_item_icon))
+                    .setImageTintList(ColorStateList.valueOf(color));
+        }
+    }
+
+    @Override
     protected void handleUpdateState(State state, Object arg) {
+        state.handlesSecondaryClick = mControlAuthority != null;
         int tileState = mTile.getState();
         if (mServiceManager.hasPendingBind()) {
             tileState = Tile.STATE_UNAVAILABLE;

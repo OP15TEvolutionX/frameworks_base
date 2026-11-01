@@ -356,7 +356,13 @@ public class SuspendedAppActivity extends AlertActivity
                 break;
         }
         if (mSuspendingPackage != null) {
-            mUsm.reportUserInteraction(mSuspendingPackage, mUserId);
+            try {
+                mUsm.reportUserInteraction(mSuspendingPackage, mUserId);
+            } catch (IllegalArgumentException e) {
+                // Suspended from a root shell: the suspending "package" is "root", which
+                // usage stats don't know.
+                Slog.w(TAG, "Could not report interaction with " + mSuspendingPackage, e);
+            }
         }
         finish();
     }

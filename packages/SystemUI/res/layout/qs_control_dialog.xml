@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (C) 2026 Evolution X; SPDX-License-Identifier: Apache-2.0 -->
+<!-- Same look as bluetooth_tile_dialog.xml. -->
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Widget.SliceView.Panel"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/qs_control_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="24dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:textAppearance="@style/TextAppearance.BluetoothTileDialog"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/qs_control_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="@dimen/bluetooth_dialog_layout_margin"
+            android:paddingHorizontal="@dimen/bluetooth_dialog_layout_margin"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:textAppearance="@style/TextAppearance.BluetoothTileDialog"
+            android:textColor="@color/materialColorOnSurfaceVariant"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="68dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/qs_control_toggle_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="36dp"
+                android:paddingEnd="15dp"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textAppearance="@style/TextAppearance.BluetoothTileDialog"
+                android:textSize="16sp" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/qs_control_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="68dp"
+                android:paddingEnd="40dp"
+                android:switchMinWidth="@dimen/settingslib_switch_track_width"
+                android:theme="@style/Theme.Material3.DynamicColors.DayNight" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/qs_control_items"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <!-- Laid out like the Done row of the internet dialog. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="9dp"
+            android:layout_marginBottom="@dimen/dialog_bottom_padding"
+            android:paddingHorizontal="24dp"
+            android:orientation="horizontal">
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/qs_control_done"
+                style="@style/Widget.Dialog.Button"
+                android:textAppearance="@style/TextAppearance.BluetoothTileDialog"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/inline_done_button" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

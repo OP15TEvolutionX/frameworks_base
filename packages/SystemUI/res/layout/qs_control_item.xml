@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (C) 2026 Evolution X; SPDX-License-Identifier: Apache-2.0 -->
+<!-- A Wi-Fi network row of internet_list_item.xml, with the tile's icon. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/InternetDialog.Network"
+    android:layout_height="@dimen/internet_dialog_wifi_network_height"
+    android:paddingStart="20dp"
+    android:paddingEnd="24dp">
+
+    <ImageView
+        android:id="@+id/qs_control_item_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="center_vertical|start"
+        android:scaleType="fitCenter" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="16dp"
+        android:gravity="start|center_vertical"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/qs_control_item_name"
+            style="@style/InternetDialog.NetworkTitle"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/qs_control_item_summary"
+            style="@style/InternetDialog.NetworkSummary"
+            android:text="@string/quick_settings_connected"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>
