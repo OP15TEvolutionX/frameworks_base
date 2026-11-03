@@ -114,6 +114,7 @@ import android.window.WindowTokenClientController;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.util.Preconditions;
+import com.android.internal.util.evolution.FingerprintDefender;
 
 import dalvik.system.BlockGuard;
 
@@ -2022,7 +2023,7 @@ class ContextImpl extends Context {
                 intent.prepareToEnterProcess(ActivityThread.isProtectedBroadcast(intent),
                         getAttributionSource());
             }
-            return intent;
+            return FingerprintDefender.maskBatteryIntent(intent);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

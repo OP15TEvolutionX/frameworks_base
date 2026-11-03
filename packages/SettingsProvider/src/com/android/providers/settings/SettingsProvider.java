@@ -133,6 +133,7 @@ import com.android.internal.display.BrightnessUtils;
 import com.android.internal.display.RefreshRateSettingsUtils;
 import com.android.internal.os.BackgroundThread;
 import com.android.internal.util.FrameworkStatsLog;
+import com.android.internal.util.evolution.FingerprintDefender;
 import com.android.providers.settings.SettingsState.Setting;
 
 import com.google.android.collect.Sets;
@@ -469,6 +470,15 @@ public class SettingsProvider extends ContentProvider {
             if (spoofed != null) {
                 return Bundle.forPair(Settings.NameValueTable.VALUE, spoofed);
             }
+            final int type = switch (method) {
+                case Settings.CALL_METHOD_GET_SYSTEM -> SETTINGS_TYPE_SYSTEM;
+                case Settings.CALL_METHOD_GET_SECURE -> SETTINGS_TYPE_SECURE;
+                case Settings.CALL_METHOD_GET_GLOBAL -> SETTINGS_TYPE_GLOBAL;
+                default -> -1;
+            };
+            if (type != -1 && isHiddenFromDefendedApp(type, name)) {
+                return Bundle.forPair(Settings.NameValueTable.VALUE, null);
+            }
         }
 
         switch (method) {
@@ -644,6 +654,9 @@ public class SettingsProvider extends ContentProvider {
     }
 
     private String getSpoofedValue(String name) {
+        final String defended = getFingerprintDefenderValue(name);
+        if (defended != null) return defended;
+
         String callingPackage = getCallingPackage();
         if (callingPackage == null) return null;
 
@@ -662,6 +675,130 @@ public class SettingsProvider extends ContentProvider {
         } catch (Exception e) {}
 
         return settings;
+    }
+
+    /**
+     * Fingerprint Defender: protected apps see neutral values for settings that tell devices
+     * apart, and every app sees at most its own entry of the protected list.
+     */
+    private String getFingerprintDefenderValue(String name) {
+        if (name == null) {
+            return null;
+        }
+        switch (name) {
+            case FingerprintDefender.KEY_PACKAGES:
+            case Settings.Global.BOOT_COUNT:
+            case Settings.Global.DEVICE_NAME:
+            case Settings.Global.ADB_ENABLED:
+            case Settings.Global.ADB_WIFI_ENABLED:
+            case Settings.Global.DEVELOPMENT_SETTINGS_ENABLED:
+                break;
+            default:
+                return null;
+        }
+        final int callingUid = Binder.getCallingUid();
+        if (UserHandle.getAppId(callingUid) < Process.FIRST_APPLICATION_UID) {
+            return null;
+        }
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            final int userId = UserHandle.getUserId(callingUid);
+            final String protectedList =
+                    getOwnerSecureSetting(userId, FingerprintDefender.KEY_PACKAGES);
+            final String saltValue = getOwnerSecureSetting(userId, FingerprintDefender.KEY_SALT);
+            final String salt = saltValue != null ? saltValue : "";
+            final String caller = findDefendedPackage(callingUid, protectedList);
+            if (FingerprintDefender.KEY_PACKAGES.equals(name)) {
+                if (caller == null) {
+                    return "";
+                }
+                // The app gets its own seed, never the salt that would reveal other apps' seeds.
+                final int epoch = FingerprintDefender.getEpoch(protectedList, caller);
+                return caller + ":" + epoch + ":" + Long.toHexString(FingerprintDefender.seed(
+                        salt, userId, caller, epoch, "app"));
+            }
+            if (caller == null) {
+                return null;
+            }
+            switch (name) {
+                case Settings.Global.BOOT_COUNT:
+                    // A plausible count that differs per app and stays put between reads.
+                    return String.valueOf(40 + FingerprintDefender.seed(salt, userId, caller,
+                            FingerprintDefender.getEpoch(protectedList, caller), "boot_count")
+                            % 400);
+                case Settings.Global.DEVICE_NAME:
+                    return Build.MODEL;
+                default:
+                    return "0";
+            }
+        } catch (RemoteException e) {
+            return null;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    /**
+     * Fingerprint Defender: a secure setting of the user whose Settings manage {@code userId},
+     * which is the parent for a profile. The caller must have cleared its binder identity.
+     */
+    private String getOwnerSecureSetting(int userId, String key) {
+        final UserInfo parent = mUserManager.getProfileParent(userId);
+        final int ownerId = parent != null ? parent.id : userId;
+        synchronized (mLock) {
+            final Setting setting = mSettingsRegistry.getSettingLocked(SETTINGS_TYPE_SECURE,
+                    ownerId, Context.DEVICE_ID_DEFAULT, key);
+            return setting != null && !setting.isNull() ? setting.getValue() : null;
+        }
+    }
+
+    /** Fingerprint Defender: the protected package of the calling UID, or null. */
+    private String findDefendedPackage(int callingUid, String protectedList)
+            throws RemoteException {
+        final String[] packages = mPackageManager.getPackagesForUid(callingUid);
+        if (packages != null) {
+            for (String pkg : packages) {
+                if (FingerprintDefender.getEpoch(protectedList, pkg) >= 0) {
+                    return pkg;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fingerprint Defender: settings outside the public AOSP set, such as the ROM's own, would
+     * reveal the ROM, so protected apps see them as missing.
+     */
+    private boolean isHiddenFromDefendedApp(int type, String name) {
+        if (name == null) {
+            return false;
+        }
+        final Set<String> readable = switch (type) {
+            case SETTINGS_TYPE_SYSTEM -> sReadableSystemSettings;
+            case SETTINGS_TYPE_SECURE -> sReadableSecureSettings;
+            default -> sReadableGlobalSettings;
+        };
+        if (readable.contains(name)) {
+            return false;
+        }
+        final int callingUid = Binder.getCallingUid();
+        if (UserHandle.getAppId(callingUid) < Process.FIRST_APPLICATION_UID) {
+            return false;
+        }
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            final String protectedList = getOwnerSecureSetting(UserHandle.getUserId(callingUid),
+                    FingerprintDefender.KEY_PACKAGES);
+            if (TextUtils.isEmpty(protectedList)) {
+                return false;
+            }
+            return findDefendedPackage(callingUid, protectedList) != null;
+        } catch (RemoteException e) {
+            return false;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
     }
 
     @Override
@@ -691,6 +828,15 @@ public class SettingsProvider extends ContentProvider {
 
         if (args.name != null) {
             String spoofed = getSpoofedValue(args.name);
+            final int type = switch (args.table) {
+                case TABLE_SYSTEM -> SETTINGS_TYPE_SYSTEM;
+                case TABLE_SECURE -> SETTINGS_TYPE_SECURE;
+                case TABLE_GLOBAL -> SETTINGS_TYPE_GLOBAL;
+                default -> -1;
+            };
+            if (spoofed == null && type != -1 && isHiddenFromDefendedApp(type, args.name)) {
+                return new MatrixCursor(normalizedProjection, 0);
+            }
             if (spoofed != null) {
                 synchronized (mLock) {
                     SettingsState state = mSettingsRegistry.getSettingsLocked(
@@ -2389,6 +2535,7 @@ public class SettingsProvider extends ContentProvider {
             case Settings.Secure.HIDE_APPS_PACKAGES:
             case Settings.Secure.HIDE_APPS_STRICT_PACKAGES:
             case Settings.Secure.HIDE_APPS_PLAY_PACKAGES:
+            case FingerprintDefender.KEY_SALT:
                 return true;
             case Settings.Secure.DEFAULT_INPUT_METHOD:
             case Settings.Secure.ENABLED_INPUT_METHODS:

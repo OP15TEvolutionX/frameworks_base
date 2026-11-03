@@ -29,12 +29,14 @@ import android.os.SystemProperties;
 import android.ravenwood.annotation.RavenwoodReplace;
 import android.text.FontConfig;
 import android.util.ArrayMap;
+import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseIntArray;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.ravenwood.RavenwoodHelperBridge;
+import com.android.internal.util.evolution.FingerprintDefender;
 
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -116,9 +118,22 @@ public final class SystemFonts {
             if (sAvailableFonts == null) {
                 sAvailableFonts = Font.getAvailableFonts();
             }
+            if (FingerprintDefender.isActive()) {
+                // Fonts the ROM adds under /product would reveal it; show only the platform's.
+                final Set<Font> platform = new ArraySet<>();
+                for (Font font : sAvailableFonts) {
+                    final File file = font.getFile();
+                    if (file == null || !file.getPath().startsWith(PRODUCT_FONTS_DIR)) {
+                        platform.add(font);
+                    }
+                }
+                return platform;
+            }
             return sAvailableFonts;
         }
     }
+
+    private static final String PRODUCT_FONTS_DIR = "/product/fonts/";
 
     /**
      * @hide

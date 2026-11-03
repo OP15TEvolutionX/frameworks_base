@@ -81,7 +81,9 @@ import java.util.Objects;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeoutException;
 
+import com.android.internal.util.evolution.FingerprintDefender;
 import com.android.internal.util.evolution.PixelPropsUtils;
+import com.android.internal.util.evolution.TrackerOptOut;
 
 /**
  * Base class for implementing application instrumentation code.  When running
@@ -1366,6 +1368,7 @@ public class Instrumentation {
         app.attach(context);
         PixelPropsUtils.setProps(context);
         GamePropsSpoofService.getInstance().applyPerAppSpoofFromContext(context);
+        FingerprintDefender.apply(context);
         return app;
     }
     
@@ -1386,6 +1389,7 @@ public class Instrumentation {
         app.attach(context);
         PixelPropsUtils.setProps(context);
         GamePropsSpoofService.getInstance().applyPerAppSpoofFromContext(context);
+        FingerprintDefender.apply(context);
         return app;
     }
 
@@ -1403,6 +1407,7 @@ public class Instrumentation {
     @RavenwoodKeep
     public void callApplicationOnCreate(Application app) {
         app.onCreate();
+        TrackerOptOut.onApplicationCreated(app);
     }
     
     /**
@@ -1549,6 +1554,7 @@ public class Instrumentation {
         prePerformCreate(activity);
         activity.performCreate(icicle);
         postPerformCreate(activity);
+        TrackerOptOut.onActivityCreated(activity);
     }
 
     /**
@@ -1563,6 +1569,7 @@ public class Instrumentation {
         prePerformCreate(activity);
         activity.performCreate(icicle, persistentState);
         postPerformCreate(activity);
+        TrackerOptOut.onActivityCreated(activity);
     }
     
     public void callActivityOnDestroy(Activity activity) {

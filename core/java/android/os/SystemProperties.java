@@ -37,6 +37,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Gives access to the system properties store.  The system properties
@@ -148,6 +149,8 @@ public class SystemProperties {
     @SystemApi
     public static String get(@NonNull String key) {
         if (TRACK_KEY_ACCESS) onKeyAccess(key);
+        final Map<String, String> overrides = sOverrides;
+        if (overrides != null && overrides.containsKey(key)) return overrides.get(key);
         return native_get(key);
     }
 
@@ -164,7 +167,22 @@ public class SystemProperties {
     @SystemApi
     public static String get(@NonNull String key, @Nullable String def) {
         if (TRACK_KEY_ACCESS) onKeyAccess(key);
+        final Map<String, String> overrides = sOverrides;
+        if (overrides != null && overrides.containsKey(key)) return overrides.get(key);
         return native_get(key, def);
+    }
+
+    // Values this app process reads instead of the real ones, set by Fingerprint Defender.
+    private static volatile Map<String, String> sOverrides;
+
+    /**
+     * Makes {@link #get} return these values in this process. Native readers still see the real
+     * properties.
+     *
+     * @hide
+     */
+    public static void setOverrides(@Nullable Map<String, String> overrides) {
+        sOverrides = overrides;
     }
 
     /**

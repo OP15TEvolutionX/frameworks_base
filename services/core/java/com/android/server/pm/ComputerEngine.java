@@ -1809,6 +1809,8 @@ public class ComputerEngine implements Computer {
 
             packageInfo.packageName = packageInfo.applicationInfo.packageName =
                     resolveExternalPackageName(p);
+            FingerprintDefenderController.maskInstallTimes(this, packageInfo, ps, callingUid,
+                    userId);
 
             if (Flags.provideInfoOfApkInApex()) {
                 final String apexModuleName =  ps.getApexModuleName();
@@ -5502,6 +5504,10 @@ public class ComputerEngine implements Computer {
         int spoofResult = shouldSpoofInstallSource(callingUid, packageName, userId);
         if (spoofResult == SPOOF_INSTALL_USER) return VENDING_PACKAGE;
         if (spoofResult == SPOOF_INSTALL_SYSTEM) return null;
+        if (FingerprintDefenderController.isMaskedInstallQuery(this, callingUid, packageName)) {
+            final PackageStateInternal own = mSettings.getPackage(packageName);
+            if (own != null && !own.isSystem()) return VENDING_PACKAGE;
+        }
         final InstallSource installSource = getInstallSource(packageName, callingUid, userId);
         if (installSource == null) {
             throw new IllegalArgumentException("Unknown package: " + packageName);
@@ -5572,6 +5578,16 @@ public class ComputerEngine implements Computer {
                     null, null, null,
                     null, null,
                     android.content.pm.PackageInstaller.PACKAGE_SOURCE_UNSPECIFIED);
+        }
+        // Fingerprint Defender: sideloaded apps, the caller included, shouldn't stand out.
+        if (FingerprintDefenderController.isMaskedInstallQuery(this, callingUid, packageName)) {
+            final PackageStateInternal own = mSettings.getPackage(packageName);
+            if (own != null && !own.isSystem()) {
+                return new InstallSourceInfo(
+                        VENDING_PACKAGE, null, VENDING_PACKAGE,
+                        VENDING_PACKAGE, VENDING_PACKAGE,
+                        android.content.pm.PackageInstaller.PACKAGE_SOURCE_STORE);
+            }
         }
 
         String installerPackageName;

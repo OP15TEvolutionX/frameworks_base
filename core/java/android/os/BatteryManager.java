@@ -36,6 +36,7 @@ import android.content.Intent;
 import android.hardware.health.V1_0.Constants;
 
 import com.android.internal.app.IBatteryStats;
+import com.android.internal.util.evolution.FingerprintDefender;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -666,7 +667,7 @@ public class BatteryManager {
     private long queryProperty(int id) {
         long ret;
 
-        if (mBatteryPropertiesRegistrar == null) {
+        if (mBatteryPropertiesRegistrar == null || isMaskedProperty(id)) {
             return Long.MIN_VALUE;
         }
 
@@ -676,6 +677,9 @@ public class BatteryManager {
                 ret = prop.getLong();
             else
                 ret = Long.MIN_VALUE;
+            if (id == BATTERY_PROPERTY_CAPACITY && ret != Long.MIN_VALUE) {
+                ret = FingerprintDefender.maskBatteryLevel((int) ret);
+            }
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -683,11 +687,30 @@ public class BatteryManager {
         return ret;
     }
 
+    // Battery wear and dates tell devices apart; protected apps see them as unsupported.
+    private static boolean isMaskedProperty(int id) {
+        if (!FingerprintDefender.isActive()) {
+            return false;
+        }
+        switch (id) {
+            case BATTERY_PROPERTY_CHARGE_COUNTER:
+            case BATTERY_PROPERTY_ENERGY_COUNTER:
+            case BATTERY_PROPERTY_MANUFACTURING_DATE:
+            case BATTERY_PROPERTY_FIRST_USAGE_DATE:
+            case BATTERY_PROPERTY_STATE_OF_HEALTH:
+            case BATTERY_PROPERTY_SERIAL_NUMBER:
+            case BATTERY_PROPERTY_PART_STATUS:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /**
      * Same as queryProperty, but for strings.
      */
     private String queryStringProperty(int id) {
-        if (mBatteryPropertiesRegistrar == null) {
+        if (mBatteryPropertiesRegistrar == null || isMaskedProperty(id)) {
             return null;
         }
 

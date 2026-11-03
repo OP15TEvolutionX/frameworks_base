@@ -35,6 +35,8 @@ import android.os.UserHandle;
 import android.os.storage.CrateInfo;
 import android.os.storage.StorageManager;
 
+import com.android.internal.util.evolution.FingerprintDefender;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
@@ -141,7 +143,10 @@ public class StorageStatsManager {
     @WorkerThread
     public @BytesLong long getFreeBytes(@NonNull UUID storageUuid) throws IOException {
         try {
-            return mService.getFreeBytes(convert(storageUuid), mContext.getOpPackageName());
+            final long free = mService.getFreeBytes(convert(storageUuid),
+                    mContext.getOpPackageName());
+            return FingerprintDefender.isActive()
+                    ? FingerprintDefender.coarseFree(free, getTotalBytes(storageUuid)) : free;
         } catch (ParcelableException e) {
             e.maybeRethrow(IOException.class);
             throw new RuntimeException(e);

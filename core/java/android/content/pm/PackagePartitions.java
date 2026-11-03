@@ -126,12 +126,15 @@ public class PackagePartitions {
      */
     @NonNull
     private static String getFingerprint() {
-        final String[] digestProperties = new String[SYSTEM_PARTITIONS.size() + 1];
+        final String[] digestProperties = new String[SYSTEM_PARTITIONS.size() + 2];
         for (int i = 0; i < SYSTEM_PARTITIONS.size(); i++) {
             final String partitionName = SYSTEM_PARTITIONS.get(i).getName();
             digestProperties[i] = "ro." + partitionName + ".build.fingerprint";
         }
         digestProperties[SYSTEM_PARTITIONS.size()] = "ro.build.version.incremental";
+        // The fingerprint and build number are fixed to a public build, so the date tells
+        // builds apart.
+        digestProperties[SYSTEM_PARTITIONS.size() + 1] = "ro.build.date.utc";
         return SystemProperties.digestOf(digestProperties);
     }
 

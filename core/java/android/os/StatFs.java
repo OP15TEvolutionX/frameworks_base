@@ -21,6 +21,8 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.system.StructStatVfs;
 
+import com.android.internal.util.evolution.FingerprintDefender;
+
 /**
  * Retrieve overall information about the space on a filesystem. This is a
  * wrapper for Unix statvfs().
@@ -48,10 +50,26 @@ public class StatFs {
      */
     private static StructStatVfs doStat(String path) {
         try {
-            return Os.statvfs(path);
+            final StructStatVfs stat = Os.statvfs(path);
+            return FingerprintDefender.isActive() ? coarse(stat) : stat;
         } catch (ErrnoException e) {
             throw new IllegalArgumentException("Invalid path: " + path, e);
         }
+    }
+
+    // Exact free space links apps that read it at the same moment, so each protected app sees
+    // its own shifted, rounded value.
+    private static StructStatVfs coarse(StructStatVfs stat) {
+        final long block = stat.f_frsize;
+        if (block <= 0) {
+            return stat;
+        }
+        final long total = stat.f_blocks * block;
+        final long free = FingerprintDefender.coarseFree(stat.f_bfree * block, total) / block;
+        final long available =
+                FingerprintDefender.coarseFree(stat.f_bavail * block, total) / block;
+        return new StructStatVfs(stat.f_bsize, block, stat.f_blocks, free, available, stat.f_files,
+                stat.f_ffree, stat.f_favail, stat.f_fsid, stat.f_flag, stat.f_namemax);
     }
 
     /**

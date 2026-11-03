@@ -75,6 +75,7 @@ import com.android.internal.annotations.GuardedBy;
 import com.android.internal.os.DebugStore;
 import com.android.internal.os.RuntimeInit;
 import com.android.internal.util.ArrayUtils;
+import com.android.internal.util.evolution.FingerprintDefender;
 
 import dalvik.system.ApplicationRuntime;
 import dalvik.system.BaseDexClassLoader;
@@ -2047,7 +2048,8 @@ public final class LoadedApk {
                                 mContext.getAttributionSource());
                         setExtrasClassLoader(cl);
                         receiver.setPendingResult(this);
-                        receiver.onReceive(mContext, intent);
+                        receiver.onReceive(mContext,
+                                FingerprintDefender.maskBatteryIntent(intent));
                     } catch (Exception e) {
                         if (ActivityThread.DEBUG_BROADCAST) Slog.i(ActivityThread.TAG,
                                 "Finishing failed broadcast to " + mReceiver);
