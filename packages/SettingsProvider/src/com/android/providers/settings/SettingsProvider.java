@@ -2524,7 +2524,9 @@ public class SettingsProvider extends ContentProvider {
     }
 
     /**
-     * Returns {@code true} if the specified secure setting should be accessible to the caller.
+     * HIDEAPPS: app callers never read the hiding lists or salts. Apps whose installed app list
+     * is hidden also don't get the input method and accessibility settings, which name other
+     * installed apps.
      */
     private boolean isHiddenByHideApps(String name) {
         final int callingUid = Binder.getCallingUid();
@@ -2581,6 +2583,9 @@ public class SettingsProvider extends ContentProvider {
         }
     }
 
+    /**
+     * Returns {@code true} if the specified secure setting should be accessible to the caller.
+     */
     private boolean isSecureSettingAccessible(String name) {
         if (isHiddenByHideApps(name)) {
             return false;

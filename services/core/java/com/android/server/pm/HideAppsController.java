@@ -37,14 +37,27 @@ import java.util.function.Predicate;
 /**
  * Tracks which packages are denied visibility of other apps. Profiles follow their parent's
  * lists because Settings only manages the parent user.
+ *
+ * <p>Modes, from the Settings lists:
+ * <ul>
+ * <li>hide_apps_packages: the app doesn't see other non-system apps.
+ * <li>hide_apps_strict_packages: it also doesn't see system apps, except role holders, the
+ *     input method and {@link #PROTECTED_PACKAGES}. It sees a stable random share of stock
+ *     overlays, so its app count looks like a normal device's and differs between apps.
+ * <li>hide_apps_play_packages: Google Play doesn't see these apps, so it stops updating them.
+ * </ul>
+ * AppsFilter asks {@link #shouldHide}; other system services ask {@link #isHiddenFrom}.
  */
 public final class HideAppsController {
+    /** Lists of one user (profiles get their parent's), read from Settings. */
     private static final class UserState {
         final Set<String> mPackages;
         final Set<String> mStrictPackages;
         final Set<String> mRoleHolders;
         final Set<String> mPlayPackages;
+        /** Device secret behind the overlay picks; created once per user. */
         final String mSalt;
+        /** "pkg:epoch" entries; a new epoch gives the app a new overlay pick. */
         final String mEpochs;
 
         UserState(Set<String> packages, Set<String> strictPackages, Set<String> roleHolders,
@@ -101,10 +114,12 @@ public final class HideAppsController {
 
     // Replaced whole, so AppsFilter snapshots can read it without locking.
     private static volatile SparseArray<UserState> sStates = new SparseArray<>();
+    // Only touched on the background handler.
     private static boolean sRolesObserved;
 
     private HideAppsController() {}
 
+    /** Called once PackageManager is ready; reloads on every change of the inputs. */
     static void start(Context context) {
         final Handler handler = BackgroundThread.getHandler();
         final ContentObserver observer = new ContentObserver(handler) {
@@ -137,6 +152,7 @@ public final class HideAppsController {
         handler.post(() -> reload(context));
     }
 
+    /** Rebuilds the state of every user that has a list; runs on the background thread. */
     private static void reload(Context context) {
         final UserManager userManager = context.getSystemService(UserManager.class);
         final RoleManager roleManager = context.getSystemService(RoleManager.class);
@@ -188,6 +204,10 @@ public final class HideAppsController {
         return TextUtils.isEmpty(raw) ? Set.of() : new ArraySet<>(raw.split(";"));
     }
 
+    /**
+     * Whether AppsFilter should hide {@code target} from the caller, a package or shared user.
+     * Protected packages and shared libraries are never hidden, since apps break without them.
+     */
     static boolean shouldHide(int callingUid, Object callingSetting,
             PackageStateInternal target) {
         final UserState state = sStates.get(UserHandle.getUserId(callingUid));
@@ -220,12 +240,17 @@ public final class HideAppsController {
             return false;
         }
         final AndroidPackage caller = pm.getPackage(callingUid);
-        return caller != null && (state.mPackages.contains(caller.getPackageName())
-                || state.mStrictPackages.contains(caller.getPackageName())
-                || (PLAY_STORE.equals(caller.getPackageName()) && !state.mPlayPackages.isEmpty()))
-                && pm.filterAppAccess(target, callingUid, userId);
+        if (caller == null) {
+            return false;
+        }
+        final String name = caller.getPackageName();
+        final boolean restricted = state.mPackages.contains(name)
+                || state.mStrictPackages.contains(name)
+                || (PLAY_STORE.equals(name) && !state.mPlayPackages.isEmpty());
+        return restricted && pm.filterAppAccess(target, callingUid, userId);
     }
 
+    /** Whether the caller, or any package of its shared user, is in {@code packages}. */
     private static boolean matches(Object callingSetting, Predicate<String> packages) {
         if (callingSetting instanceof PackageStateInternal) {
             return packages.test(((PackageStateInternal) callingSetting).getPackageName());
@@ -253,6 +278,11 @@ public final class HideAppsController {
                 || name.startsWith("com.google.") || name.startsWith("android.overlay.");
     }
 
+    /**
+     * Whether the caller sees this stock overlay. The caller gets a share of 0-100% from the
+     * salt, its epoch and its name, and each overlay is in or out by the same hash, so the pick
+     * stays the same until the app is reset in Settings.
+     */
     private static boolean showsOverlay(UserState state, Object callingSetting, String overlay) {
         final String caller;
         if (callingSetting instanceof PackageStateInternal) {
@@ -262,7 +292,6 @@ public final class HideAppsController {
         } else {
             return false;
         }
-        // The caller's own share, then a stable pick of overlays within it.
         final int epoch = FingerprintDefender.getEpoch(state.mEpochs, caller);
         final int share = Math.floorMod(Objects.hash(state.mSalt, epoch, caller), 101);
         return Math.floorMod(Objects.hash(state.mSalt, epoch, caller, overlay), 100) < share;
