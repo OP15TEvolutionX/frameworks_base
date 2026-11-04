@@ -8510,6 +8510,19 @@ public final class Settings {
          */
         public static final String HIDE_APPS_PLAY_PACKAGES = "hide_apps_play_packages";
 
+        /**
+         * Semicolon-separated {@code package:epoch} entries; a new epoch gives the app a new
+         * share of overlays in strict mode.
+         * @hide
+         */
+        public static final String HIDE_APPS_EPOCHS = "hide_apps_epochs";
+
+        /**
+         * Random hex salt behind the overlays each strictly restricted app sees.
+         * @hide
+         */
+        public static final String HIDE_APPS_SALT = "hide_apps_salt";
+
         // NOTE: If you add new settings here, be sure to add them to
         // com.android.providers.settings.SettingsProtoDumpUtil#dumpProtoSecureSettingsLocked.
 

@@ -2535,6 +2535,8 @@ public class SettingsProvider extends ContentProvider {
             case Settings.Secure.HIDE_APPS_PACKAGES:
             case Settings.Secure.HIDE_APPS_STRICT_PACKAGES:
             case Settings.Secure.HIDE_APPS_PLAY_PACKAGES:
+            case Settings.Secure.HIDE_APPS_EPOCHS:
+            case Settings.Secure.HIDE_APPS_SALT:
             case FingerprintDefender.KEY_SALT:
                 return true;
             case Settings.Secure.DEFAULT_INPUT_METHOD:

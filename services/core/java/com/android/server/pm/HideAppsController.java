@@ -23,11 +23,13 @@ import android.util.ArraySet;
 import android.util.SparseArray;
 
 import com.android.internal.os.BackgroundThread;
+import com.android.internal.util.evolution.FingerprintDefender;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.pm.pkg.SharedUserApi;
 
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -42,19 +44,21 @@ public final class HideAppsController {
         final Set<String> mStrictPackages;
         final Set<String> mRoleHolders;
         final Set<String> mPlayPackages;
+        final String mSalt;
+        final String mEpochs;
 
         UserState(Set<String> packages, Set<String> strictPackages, Set<String> roleHolders,
-                Set<String> playPackages) {
+                Set<String> playPackages, String salt, String epochs) {
             mPackages = packages;
             mStrictPackages = strictPackages;
             mRoleHolders = roleHolders;
             mPlayPackages = playPackages;
+            mSalt = salt;
+            mEpochs = epochs;
         }
     }
 
     private static final String PLAY_STORE = "com.android.vending";
-    // Changes on every boot, so the overlay picks can't be matched across reboots.
-    private static final long OVERLAY_SALT = new SecureRandom().nextLong();
 
     // Apps break without these even when they never name them directly.
     private static final Set<String> PROTECTED_PACKAGES = Set.of(
@@ -112,6 +116,7 @@ public final class HideAppsController {
         for (String key : new String[] {Settings.Secure.HIDE_APPS_PACKAGES,
                 Settings.Secure.HIDE_APPS_STRICT_PACKAGES,
                 Settings.Secure.HIDE_APPS_PLAY_PACKAGES,
+                Settings.Secure.HIDE_APPS_EPOCHS,
                 Settings.Secure.DEFAULT_INPUT_METHOD}) {
             context.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor(key), false, observer, UserHandle.USER_ALL);
@@ -159,8 +164,20 @@ public final class HideAppsController {
             if (ime != null) {
                 roleHolders.add(ime.getPackageName());
             }
+            // Like Fingerprint Defender: a lasting salt, and a per-app epoch to reset with.
+            String salt = Settings.Secure.getStringForUser(context.getContentResolver(),
+                    Settings.Secure.HIDE_APPS_SALT, ownerId);
+            if (TextUtils.isEmpty(salt)) {
+                final byte[] bytes = new byte[16];
+                new SecureRandom().nextBytes(bytes);
+                salt = HexFormat.of().formatHex(bytes);
+                Settings.Secure.putStringForUser(context.getContentResolver(),
+                        Settings.Secure.HIDE_APPS_SALT, salt, ownerId);
+            }
+            final String epochs = Settings.Secure.getStringForUser(context.getContentResolver(),
+                    Settings.Secure.HIDE_APPS_EPOCHS, ownerId);
             states.put(user.id, new UserState(packages, strictPackages, roleHolders,
-                    playPackages));
+                    playPackages, salt, epochs));
         }
         sStates = states;
     }
@@ -185,7 +202,7 @@ public final class HideAppsController {
         final boolean strict = matches(callingSetting, state.mStrictPackages::contains);
         if (target.isSystem()) {
             if (strict && isStockOverlay(target)) {
-                return !showsOverlay(callingSetting, target.getPackageName());
+                return !showsOverlay(state, callingSetting, target.getPackageName());
             }
             return strict && !state.mRoleHolders.contains(target.getPackageName());
         }
@@ -224,7 +241,7 @@ public final class HideAppsController {
     }
 
     // Overlays that ship on many devices; each restricted app sees its own share of them, so
-    // the visible app count differs between apps and between boots.
+    // the visible app count differs between apps until the app is reset.
     private static boolean isStockOverlay(PackageStateInternal target) {
         final AndroidPackage pkg = target.getPkg();
         if (pkg == null || !pkg.isResourceOverlay()) {
@@ -236,7 +253,7 @@ public final class HideAppsController {
                 || name.startsWith("com.google.") || name.startsWith("android.overlay.");
     }
 
-    private static boolean showsOverlay(Object callingSetting, String overlay) {
+    private static boolean showsOverlay(UserState state, Object callingSetting, String overlay) {
         final String caller;
         if (callingSetting instanceof PackageStateInternal) {
             caller = ((PackageStateInternal) callingSetting).getPackageName();
@@ -246,8 +263,9 @@ public final class HideAppsController {
             return false;
         }
         // The caller's own share, then a stable pick of overlays within it.
-        final int share = Math.floorMod(Objects.hash(OVERLAY_SALT, caller), 101);
-        return Math.floorMod(Objects.hash(OVERLAY_SALT, caller, overlay), 100) < share;
+        final int epoch = FingerprintDefender.getEpoch(state.mEpochs, caller);
+        final int share = Math.floorMod(Objects.hash(state.mSalt, epoch, caller), 101);
+        return Math.floorMod(Objects.hash(state.mSalt, epoch, caller, overlay), 100) < share;
     }
 
     // Apps link against these at runtime, e.g. the Trichrome library behind WebView.
