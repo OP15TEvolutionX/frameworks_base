@@ -120,6 +120,9 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
             "org.evolution.qs.PREFERENCES_ACTIVITY";
     @Nullable
     private String mPreferencesActivity;
+    /** Meta-data flag: the whole tile opens the control dialog, no separate icon toggle. */
+    private static final String META_SINGLE_ZONE = "org.evolution.qs.SINGLE_ZONE";
+    private boolean mSingleZone;
     private final SystemUIDialog.Factory mDialogFactory;
     private final DialogTransitionAnimator mDialogTransitionAnimator;
     private final CustomTileStatePersister mCustomTileStatePersister;
@@ -232,6 +235,8 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
                     ? info.metaData.getString(META_CONTROL_AUTHORITY) : null;
             mPreferencesActivity = trusted && info.metaData != null
                     ? info.metaData.getString(META_PREFERENCES_ACTIVITY) : null;
+            mSingleZone = mControlAuthority != null
+                    && info.metaData.getBoolean(META_SINGLE_ZONE, false);
             int icon = info.icon != 0 ? info.icon
                     : info.applicationInfo.icon;
             // Update the icon if its not set or is the default icon.
@@ -646,7 +651,7 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
 
     @Override
     protected void handleUpdateState(State state, Object arg) {
-        state.handlesSecondaryClick = mControlAuthority != null;
+        state.handlesSecondaryClick = mControlAuthority != null && !mSingleZone;
         int tileState = mTile.getState();
         if (mServiceManager.hasPendingBind()) {
             tileState = Tile.STATE_UNAVAILABLE;
