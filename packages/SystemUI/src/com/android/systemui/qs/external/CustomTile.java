@@ -227,9 +227,10 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
             }
 
             ServiceInfo info = pm.getServiceInfo(mComponent, flags | PackageManager.GET_META_DATA);
-            mControlAuthority = isSystemApp(pm) && info.metaData != null
+            boolean trusted = isTrustedControlApp(pm);
+            mControlAuthority = trusted && info.metaData != null
                     ? info.metaData.getString(META_CONTROL_AUTHORITY) : null;
-            mPreferencesActivity = isSystemApp(pm) && info.metaData != null
+            mPreferencesActivity = trusted && info.metaData != null
                     ? info.metaData.getString(META_PREFERENCES_ACTIVITY) : null;
             int icon = info.icon != 0 ? info.icon
                     : info.applicationInfo.icon;
@@ -251,6 +252,16 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
 
     private boolean isSystemApp(PackageManager pm) throws PackageManager.NameNotFoundException {
         return pm.getApplicationInfo(mComponent.getPackageName(), 0).isSystemApp();
+    }
+
+    /**
+     * Two-zone control is offered to system apps and to apps signed with the platform key,
+     * so a user-installed app can't make SystemUI show its texts in a system dialog.
+     */
+    private boolean isTrustedControlApp(PackageManager pm)
+            throws PackageManager.NameNotFoundException {
+        return isSystemApp(pm) || pm.checkSignatures(mComponent.getPackageName(), "android")
+                == PackageManager.SIGNATURE_MATCH;
     }
 
     /**
