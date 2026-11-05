@@ -255,13 +255,15 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     }
 
     /**
-     * Two-zone control is offered to system apps and to apps signed with the platform key,
-     * so a user-installed app can't make SystemUI show its texts in a system dialog.
+     * Two-zone control is offered to system apps and to the packages listed in
+     * config_twoZoneTilePackages, so other user-installed apps can't make SystemUI show
+     * their texts in a system dialog.
      */
     private boolean isTrustedControlApp(PackageManager pm)
             throws PackageManager.NameNotFoundException {
-        return isSystemApp(pm) || pm.checkSignatures(mComponent.getPackageName(), "android")
-                == PackageManager.SIGNATURE_MATCH;
+        return isSystemApp(pm) || java.util.Arrays.asList(mContext.getResources()
+                .getStringArray(R.array.config_twoZoneTilePackages))
+                .contains(mComponent.getPackageName());
     }
 
     /**
