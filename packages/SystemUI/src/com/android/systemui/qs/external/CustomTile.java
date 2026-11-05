@@ -56,6 +56,7 @@ import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.animation.ActivityTransitionAnimator;
 import android.os.Bundle;
+import android.database.ContentObserver;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.CompoundButton;
@@ -122,6 +123,7 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
     private String mPreferencesActivity;
     /** Meta-data flag: the whole tile opens the control dialog, no separate icon toggle. */
     private static final String META_SINGLE_ZONE = "org.evolution.qs.SINGLE_ZONE";
+    private static final long CONTROL_REFRESH_DELAY_MS = 100;
     private boolean mSingleZone;
     private final SystemUIDialog.Factory mDialogFactory;
     private final DialogTransitionAnimator mDialogTransitionAnimator;
@@ -567,10 +569,48 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
                 throw new UnsupportedOperationException();
             }
 
+            /** Reloads the dialog when the app calls notifyChange on content://<authority>/state. */
+            private final ContentObserver mObserver = new ContentObserver(mHandler) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    // Coalesce bursts, e.g. battery levels arriving one by one.
+                    mHandler.removeCallbacks(mRefresh);
+                    mHandler.postDelayed(mRefresh, CONTROL_REFRESH_DELAY_MS);
+                }
+            };
+            private SystemUIDialog mDialog;
+            private final Runnable mRefresh = () -> {
+                Bundle reply = callControl("get", null, null);
+                if (reply == null) return;
+                applyControl(reply);
+                mUiHandler.post(() -> {
+                    if (mDialog != null && mDialog.isShowing()) bindControlDialog(mDialog, reply);
+                });
+            };
+
             @Override
             public void onCreate(SystemUIDialog dialog, Bundle savedInstanceState) {
+                mDialog = dialog;
                 dialog.setContentView(R.layout.qs_control_dialog);
                 bindControlDialog(dialog, control);
+            }
+
+            @Override
+            public void onStart(SystemUIDialog dialog) {
+                try {
+                    mUserContext.getContentResolver().registerContentObserver(
+                            controlStateUri(), true, mObserver);
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "Could not observe control state", e);
+                }
+                sendControl("dialog_opened", null, null);
+            }
+
+            @Override
+            public void onStop(SystemUIDialog dialog) {
+                mUserContext.getContentResolver().unregisterContentObserver(mObserver);
+                mHandler.removeCallbacks(mRefresh);
+                sendControl("dialog_closed", null, null);
             }
         });
         SystemUIDialog.setShowForAllUsers(dialog, true);
@@ -584,10 +624,21 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
         }
     }
 
+    private Uri controlStateUri() {
+        return new Uri.Builder().scheme("content").authority(mControlAuthority)
+                .appendPath("state").build();
+    }
+
+    /** Fills the dialog from a control reply; called again on every refresh. */
     private void bindControlDialog(SystemUIDialog dialog, Bundle control) {
         ((TextView) dialog.requireViewById(R.id.qs_control_title)).setText(getState().label);
         ((TextView) dialog.requireViewById(R.id.qs_control_subtitle))
                 .setText(control.getString("subtitle"));
+        if (RemoteControlContent.bind(dialog, control)) {
+            dialog.requireViewById(R.id.qs_control_done)
+                    .setOnClickListener(view -> dialog.dismiss());
+            return;
+        }
         ((TextView) dialog.requireViewById(R.id.qs_control_toggle_title))
                 .setText(control.getString("enable_label"));
         dialog.requireViewById(R.id.qs_control_done).setOnClickListener(view -> dialog.dismiss());
@@ -597,7 +648,10 @@ public class CustomTile extends QSTileImpl<State> implements TileChangeListener,
         final String[] active = {control.getString("active")};
         final boolean[] enabled = {control.getBoolean("enabled")};
 
+        // Rebinding must not echo the new state back to the provider.
+        list.removeAllViews();
         CompoundButton toggle = dialog.requireViewById(R.id.qs_control_toggle);
+        toggle.setOnCheckedChangeListener(null);
         toggle.setChecked(enabled[0]);
         toggle.setEnabled(control.getBoolean("can_enable"));
         toggle.setOnCheckedChangeListener((view, checked) -> {

@@ -38,6 +38,7 @@
             android:textSize="14sp" />
 
         <LinearLayout
+            android:id="@+id/qs_control_toggle_row"
             android:layout_width="match_parent"
             android:layout_height="68dp"
             android:gravity="center_vertical"
@@ -69,6 +70,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />
+
+        <!-- RemoteViews from the tile's app replace the switch and the list when given. -->
+        <FrameLayout
+            android:id="@+id/qs_control_remote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/bluetooth_dialog_layout_margin"
+            android:visibility="gone" />
 
         <!-- Laid out like the Done row of the internet dialog. -->
         <LinearLayout
