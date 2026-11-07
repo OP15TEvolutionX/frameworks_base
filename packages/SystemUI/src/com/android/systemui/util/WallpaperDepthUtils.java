@@ -153,8 +153,15 @@ public class WallpaperDepthUtils {
             @Override
             protected void onAttachedToWindow() {
                 super.onAttachedToWindow();
+                // Adding a sibling while the parent dispatches attach shifts its
+                // children and the last one never gets attached; add it afterwards.
+                post(this::addLockScreenBackground);
+            }
+
+            private void addLockScreenBackground() {
                 ViewGroup parent = (ViewGroup) getParent();
-                if (parent != null && mLockScreenBackground.getParent() == null) {
+                if (isAttachedToWindow() && parent != null
+                        && mLockScreenBackground.getParent() == null) {
                     View keyguardRootView = parent.findViewById(
                             com.android.systemui.res.R.id.keyguard_root_view);
                     if (keyguardRootView != null) {
